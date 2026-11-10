@@ -1,11 +1,5 @@
 {
   "version": 2,
-  "outputDirectory": ".",
-  "buildCommand": "node scripts/build_vercel_config.js",
-  "rewrites": [
-    {
-      "source": "/(.*)",
-      "destination": "/web/$1"
-    }
-  ]
+  "outputDirectory": "web",
+  "buildCommand": "[ -f web/build_config.js ] && node web/build_config.js || node build_config.js"
 }
