@@ -67,6 +67,63 @@ class PhonemeAlignment:
     confidence: float
 
 
+# ARPAbet phone variants sometimes emitted by L2-ARCTIC / non-CMU textgrids
+_PHONEME_ALIASES: Dict[str, str] = {
+    "AX": "AH0",
+    "AX0": "AH0",
+    "AX1": "AH0",
+    "AX2": "AH0",
+    "AXR": "ER0",
+    "AXR0": "ER0",
+    "AXR1": "ER0",
+    "AXR2": "ER0",
+    "IX": "IH0",
+    "IX0": "IH0",
+    "IX1": "IH0",
+    "IX2": "IH0",
+    "UX": "UW0",
+    "UX0": "UW0",
+    "UX1": "UW0",
+    "UX2": "UW0",
+    "DX": "T",
+    "NX": "N",
+    "EL": "L",
+    "EM": "M",
+    "EN": "N",
+    "ENG": "NG",
+    "HV": "HH",
+    "WH": "W",
+    "Q": "T",
+}
+
+_ARPABET_VOWELS = frozenset({
+    "AA", "AE", "AH", "AO", "AW", "AY", "EH", "ER", "EY", "IH", "IY", "OW", "OY", "UH", "UW"
+})
+
+
+def normalize_phoneme_token(p: str) -> str:
+    """Normalize ARPAbet phoneme string (upper-case, map variants, supply default vowel stress)."""
+    if not p:
+        return "<unk>"
+    s = p.strip()
+    if s in ("<pad>", "<unk>", "|"):
+        return s
+    # Keep alphanumeric only (drops trailing '*', '?', punctuation)
+    clean = "".join(ch for ch in s.upper() if ch.isalnum())
+    if not clean:
+        return "<unk>"
+    if clean in _PHONEME_ALIASES:
+        return _PHONEME_ALIASES[clean]
+    base = clean.rstrip("0123456789")
+    if base in _PHONEME_ALIASES:
+        return _PHONEME_ALIASES[base]
+    if base in _ARPABET_VOWELS:
+        if len(clean) > len(base) and clean[-1] in ("0", "1", "2"):
+            return f"{base}{clean[-1]}"
+        return f"{base}1"
+    return base if base else clean
+
+
 class CTCAligner(nn.Module):
     """
     CTC head + forced alignment to map phoneme sequence -> frame spans.
@@ -101,20 +158,25 @@ class CTCAligner(nn.Module):
 
     def phonemes_to_ids(self, phonemes: List[str]) -> torch.Tensor:
         """Map ARPAbet phoneme strings to token IDs."""
+        unk_id = self.token2id["<unk>"]
         ids = []
         for p in phonemes:
-            ids.append(self.token2id.get(p, self.token2id["<unk>"]))
+            if p in self.token2id:
+                ids.append(self.token2id[p])
+            else:
+                norm = normalize_phoneme_token(p)
+                ids.append(self.token2id.get(norm, unk_id))
         return torch.tensor(ids, dtype=torch.long)
 
     def forward_ctc_logits(self, frame_features: torch.Tensor) -> torch.Tensor:
-        """(B, T, D) -> (T, B, C) log-probs for torch.nn.functional.ctc_loss."""
-        logits = self.ctc_proj(frame_features)
+        """(B, T, D) -> (T, B, C) log-probs (float32) for torch.nn.functional.ctc_loss."""
+        logits = self.ctc_proj(frame_features).float()
         log_probs = F.log_softmax(logits, dim=-1)
         return log_probs.transpose(0, 1)
 
     def _align_log_probs(self, frame_features: torch.Tensor) -> torch.Tensor:
-        """(T, D) -> (1, T, C) log-probs for torchaudio forced_align (batch-first)."""
-        logits = self.ctc_proj(frame_features.unsqueeze(0))
+        """(T, D) -> (1, T, C) log-probs (float32) for torchaudio forced_align (batch-first)."""
+        logits = self.ctc_proj(frame_features.unsqueeze(0)).float()
         return F.log_softmax(logits, dim=-1)
 
     def _run_forced_align(
@@ -148,6 +210,7 @@ class CTCAligner(nn.Module):
         frame_features: torch.Tensor,
         phonemes: List[str],
         frame_lengths: Optional[int] = None,
+        log_probs: Optional[torch.Tensor] = None,
     ) -> Tuple[List[PhonemeAlignment], torch.Tensor]:
         """
         Force-align one utterance.
@@ -156,6 +219,7 @@ class CTCAligner(nn.Module):
             frame_features: (T, D) single utterance frame features.
             phonemes: canonical ARPAbet phoneme list from transcript/CMUdict.
             frame_lengths: number of valid frames T.
+            log_probs: optional precomputed (1, T, C) log-probs.
 
         Returns:
             alignments: list of PhonemeAlignment with frame spans.
@@ -163,30 +227,42 @@ class CTCAligner(nn.Module):
         """
         if frame_lengths is None:
             frame_lengths = frame_features.shape[0]
+        frame_lengths = min(int(frame_lengths), int(frame_features.shape[0]))
 
         T, D = frame_features.shape
-        if len(phonemes) == 0:
+        if len(phonemes) == 0 or frame_lengths == 0:
             return [], frame_features.new_zeros(0, D)
 
         targets = self.phonemes_to_ids(phonemes).to(frame_features.device)
+        t_list = targets.tolist()
+        min_ctc_frames = len(t_list) + sum(1 for a, b in zip(t_list[:-1], t_list[1:]) if a == b)
 
-        if not _ensure_torchaudio() or forced_align is None:
-            return self._uniform_align(frame_features, phonemes)
+        if not _ensure_torchaudio() or forced_align is None or frame_lengths < min_ctc_frames:
+            return self._uniform_align(frame_features[:frame_lengths], phonemes)
 
-        log_probs = self._align_log_probs(frame_features)  # (1, T, C)
-        input_lengths = torch.tensor([frame_lengths], device=frame_features.device)
-        target_lengths = torch.tensor([len(targets)], device=frame_features.device)
+        if log_probs is None:
+            lp = self._align_log_probs(frame_features[:frame_lengths])  # (1, T, C)
+        else:
+            lp = log_probs if log_probs.dim() == 3 else log_probs.unsqueeze(0)
+            lp = lp[:, :frame_lengths, :].float()
 
-        aligned_tokens, _align_scores = self._run_forced_align(
-            log_probs, targets, input_lengths, target_lengths
-        )
+        input_lengths = torch.tensor([frame_lengths], device=lp.device)
+        target_lengths = torch.tensor([len(targets)], device=lp.device)
+
+        try:
+            aligned_tokens, _align_scores = self._run_forced_align(
+                lp, targets.to(lp.device), input_lengths, target_lengths
+            )
+        except RuntimeError:
+            return self._uniform_align(frame_features[:frame_lengths], phonemes)
+
         if aligned_tokens.dim() > 1:
             aligned = aligned_tokens[0, :frame_lengths]
         else:
             aligned = aligned_tokens[:frame_lengths]
 
         spans = self._tokens_to_spans(aligned, targets, phonemes)
-        node_features = self._pool_node_features(frame_features, spans)
+        node_features = self._pool_node_features(frame_features[:frame_lengths], spans)
         return spans, node_features
 
     def _tokens_to_spans(
@@ -198,30 +274,53 @@ class CTCAligner(nn.Module):
         """
         Parse per-frame CTC alignment into phoneme start/end spans with smooth interpolation.
 
-        forced_align output assigns frames to target position indices (0..N-1) or blank.
-        For phonemes that are not assigned frames by CTC (common in long audio or rapid speech),
-        their spans are smoothly interpolated between neighboring aligned anchor phonemes
-        instead of collapsing to frame 0.
+        torchaudio.functional.forced_align outputs the aligned TOKEN ID (or blank_id=0) per frame
+        in monotonic target order — NOT target position index 0..N-1.
+        We extract maximal contiguous non-blank token runs and match them monotonically to targets.
         """
         spans: List[PhonemeAlignment] = []
         target_list = targets.tolist()
         N = len(phonemes)
-        T = aligned.shape[0]
+        T = int(aligned.shape[0])
 
         if N == 0:
             return spans
 
-        # First pass: collect raw frame detections
-        raw_spans = []
+        # 1. Extract contiguous non-blank token runs: (token_id, start_f, end_f)
+        arr = aligned.tolist()
+        runs: List[Tuple[int, int, int]] = []
+        idx = 0
+        while idx < T:
+            tok = int(arr[idx])
+            if tok != self.blank_id:
+                s_f = idx
+                while idx + 1 < T and int(arr[idx + 1]) == tok:
+                    idx += 1
+                runs.append((tok, s_f, idx))
+            idx += 1
+
+        # 2. Monotonically match runs to target_list[0..N-1]
+        raw_spans: List[Optional[Tuple[int, int, float]]] = [None] * N
+        r_idx = 0
         for i in range(N):
-            mask = (aligned == i)
-            if mask.any():
-                idx = mask.nonzero(as_tuple=True)[0]
-                s_f, e_f = int(idx[0].item()), int(idx[-1].item())
-                conf = float(mask.float().mean().item())
-                raw_spans.append((s_f, e_f, conf))
+            tid = int(target_list[i])
+            if r_idx < len(runs) and runs[r_idx][0] == tid:
+                _, s_f, e_f = runs[r_idx]
+                conf = min(1.0, (e_f - s_f + 1) / 3.0)
+                raw_spans[i] = (s_f, e_f, conf)
+                r_idx += 1
             else:
-                raw_spans.append(None)
+                # Lookahead up to a few runs in case a middle token run shifted/dropped
+                found = -1
+                for k in range(r_idx, min(len(runs), r_idx + 4)):
+                    if runs[k][0] == tid:
+                        found = k
+                        break
+                if found != -1:
+                    _, s_f, e_f = runs[found]
+                    conf = min(1.0, (e_f - s_f + 1) / 3.0)
+                    raw_spans[i] = (s_f, e_f, conf)
+                    r_idx = found + 1
 
         # Anchors: phonemes with valid CTC frame alignment
         anchors = [(i, raw_spans[i][0], raw_spans[i][1], raw_spans[i][2]) for i in range(N) if raw_spans[i] is not None]
@@ -236,28 +335,28 @@ class CTCAligner(nn.Module):
             return spans
 
         final_spans = [None] * N
-        for idx, s_f, e_f, conf in anchors:
-            final_spans[idx] = (s_f, e_f, conf)
+        for idx_a, s_f, e_f, conf in anchors:
+            final_spans[idx_a] = (s_f, e_f, conf)
 
         # Interpolate before first anchor
-        first_idx, first_s, first_e, _ = anchors[0]
+        first_idx, first_s, _, _ = anchors[0]
         if first_idx > 0:
-            step = max(1, first_s // first_idx) if first_idx > 0 else 1
+            step = max(1, first_s // first_idx)
             for k in range(first_idx):
                 s = int(k * step)
                 e = min(first_s, int((k + 1) * step))
-                final_spans[k] = (max(0, s), min(T - 1, e), 0.4)
+                final_spans[k] = (max(0, min(T - 1, s)), max(0, min(T - 1, e)), 0.0)
 
         # Interpolate between consecutive anchors
         for a_idx in range(len(anchors) - 1):
-            i_curr, s_curr, e_curr, _ = anchors[a_idx]
-            i_next, s_next, e_next, _ = anchors[a_idx + 1]
+            i_curr, _, e_curr, _ = anchors[a_idx]
+            i_next, s_next, _, _ = anchors[a_idx + 1]
             gap_count = i_next - i_curr - 1
             if gap_count > 0:
                 gap_start = e_curr
                 gap_end = s_next
                 if gap_end <= gap_start:
-                    gap_end = gap_start + gap_count * 2
+                    gap_end = gap_start + gap_count
                 gap_len = max(gap_count, gap_end - gap_start)
                 step = gap_len / gap_count
                 for step_i in range(gap_count):
@@ -266,10 +365,10 @@ class CTCAligner(nn.Module):
                     e = int(gap_start + (step_i + 1) * step)
                     s = max(0, min(T - 1, s))
                     e = max(s, min(T - 1, e))
-                    final_spans[target_i] = (s, e, 0.4)
+                    final_spans[target_i] = (s, e, 0.0)
 
         # Interpolate after last anchor
-        last_idx, last_s, last_e, _ = anchors[-1]
+        last_idx, _, last_e, _ = anchors[-1]
         if last_idx < N - 1:
             rem_count = N - 1 - last_idx
             rem_frames = max(rem_count, T - last_e)
@@ -280,7 +379,7 @@ class CTCAligner(nn.Module):
                 e = int(last_e + (step_i + 1) * step)
                 s = max(0, min(T - 1, s))
                 e = max(s, min(T - 1, e))
-                final_spans[target_i] = (s, e, 0.4)
+                final_spans[target_i] = (s, e, 0.0)
 
         for i in range(N):
             s_f, e_f, conf = final_spans[i]
@@ -325,7 +424,8 @@ class CTCAligner(nn.Module):
         for i, ph in enumerate(phonemes):
             s = i * chunk
             e = min(T - 1, (i + 1) * chunk - 1) if i < n - 1 else T - 1
-            tid = self.token2id.get(ph, self.token2id["<unk>"])
+            norm = normalize_phoneme_token(ph) if ph not in self.token2id else ph
+            tid = self.token2id.get(norm, self.token2id["<unk>"])
             spans.append(
                 PhonemeAlignment(ph, tid, s, e, 1.0)
             )
@@ -337,16 +437,19 @@ class CTCAligner(nn.Module):
         frame_features: torch.Tensor,
         phoneme_lists: List[List[str]],
         frame_lengths: torch.Tensor,
+        batch_log_probs: Optional[torch.Tensor] = None,
     ) -> List[Tuple[List[PhonemeAlignment], torch.Tensor]]:
         """Align a batch; returns per-utterance (spans, node_features)."""
         results = []
         B = frame_features.shape[0]
         for b in range(B):
             T_b = int(frame_lengths[b].item())
+            lp_b = batch_log_probs[b : b + 1, :T_b] if batch_log_probs is not None else None
             spans, nodes = self.align_utterance(
                 frame_features[b, :T_b],
                 phoneme_lists[b],
                 T_b,
+                log_probs=lp_b,
             )
             results.append((spans, nodes))
         return results
@@ -356,15 +459,21 @@ class CTCAligner(nn.Module):
         frame_features: torch.Tensor,
         phoneme_lists: List[List[str]],
         frame_lengths: torch.Tensor,
+        batch_log_probs: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
         """Auxiliary CTC loss for training the alignment head."""
-        log_probs = self.forward_ctc_logits(frame_features)
+        if batch_log_probs is not None:
+            log_probs = batch_log_probs.float().transpose(0, 1)
+        else:
+            log_probs = self.forward_ctc_logits(frame_features)
         targets_list = []
         target_lengths = []
         for phs in phoneme_lists:
             t = self.phonemes_to_ids(phs)
             targets_list.append(t)
             target_lengths.append(len(t))
+        if not targets_list or sum(target_lengths) == 0:
+            return frame_features.new_zeros(())
         targets = torch.cat(targets_list).to(frame_features.device)
         target_lengths_t = torch.tensor(target_lengths, device=frame_features.device)
         loss = F.ctc_loss(

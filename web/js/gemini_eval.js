@@ -6,10 +6,10 @@
  * TUYỆT ĐỐI KHÔNG DÙNG CÔNG THỨC PHẦN TRĂM CỐ ĐỊNH.
  */
 
-import { supabase } from './supabase.js';
+import { supabase, APP_CONFIG } from './supabase.js';
 
-export const DEFAULT_GEMINI_ENDPOINT = 'https://revidapi.com/v1/chat/completions';
-export const DEFAULT_GEMINI_MODEL = 'gemini-3.7-flash';
+export const DEFAULT_GEMINI_ENDPOINT = APP_CONFIG?.DEFAULT_GEMINI_ENDPOINT || 'https://revidapi.com/v1/chat/completions';
+export const DEFAULT_GEMINI_MODEL = APP_CONFIG?.DEFAULT_GEMINI_MODEL || 'gemini-3.7-flash';
 
 let supabaseSettingsPromise = null;
 
@@ -376,11 +376,20 @@ Phát âm âm học (SpeechOcean): Điểm tổng=${rawPronTotal.toFixed(1)}/10 
 
     // Điểm tổng chính xác 100% là trung bình cộng của 4 trụ cột IELTS:
     // Overall = PR (25%) + FC (25%) + LR (25%) + GRA (25%)
+    // Áp dụng gatekeeper ngữ cảnh cho các task không phải read_aloud.
     let scoreTotal;
     if (taskType === 'read_aloud') {
       scoreTotal = clampScore(rawPronTotal, 0, 10);
     } else {
-      scoreTotal = Math.round(((rawPronTotal * 0.25) + (scoreContext * 0.25) + (scoreLexical * 0.25) + (scoreGrammar * 0.25)) * 10) / 10;
+      const rawWeightedTotal = (rawPronTotal * 0.25) + (scoreContext * 0.25) + (scoreLexical * 0.25) + (scoreGrammar * 0.25);
+      scoreTotal = calibrateTotalScoreWithContext(
+        rawWeightedTotal,
+        scoreContext,
+        scoreGrammar,
+        scoreLexical,
+        relevanceLevel,
+        taskType,
+      );
     }
 
     return {
@@ -419,7 +428,7 @@ Phát âm âm học (SpeechOcean): Điểm tổng=${rawPronTotal.toFixed(1)}/10 
  * Nếu ngữ cảnh đã không phù hợp (lạc đề, quá cộc lốc), điểm ngữ pháp
  * tuyệt đối không được can thiệp nhiều để kéo điểm tổng lên.
  */
-function calibrateTotalScoreWithContext(rawTotal, contextScore, grammarScore, lexicalScore = null, relevanceLevel = '', taskType = '') {
+export function calibrateTotalScoreWithContext(rawTotal, contextScore, grammarScore, lexicalScore = null, relevanceLevel = '', taskType = '') {
   let total = Number(rawTotal);
   if (isNaN(total)) total = 5.0;
   const ctx = Number(contextScore) || 0;
@@ -429,10 +438,13 @@ function calibrateTotalScoreWithContext(rawTotal, contextScore, grammarScore, le
   // Trường hợp đặc thù cho Read Aloud:
   // Ngữ pháp của bài đọc không phải do học viên tạo ra mà là văn bản đề thi
   if (taskType === 'read_aloud') {
-    if (relevanceLevel === 'too_short' || ctx < 3.0) {
+    if (contextScore == null && relevanceLevel !== 'too_short' && relevanceLevel !== 'partially_relevant') {
+      return clampScore(total, 0, 10);
+    }
+    if (relevanceLevel === 'too_short' || (contextScore != null && ctx < 3.0)) {
       return clampScore(Math.min(total, 3.5), 0, 10);
     }
-    if (ctx < 5.0 || relevanceLevel === 'partially_relevant') {
+    if ((contextScore != null && ctx < 5.0) || relevanceLevel === 'partially_relevant') {
       return clampScore(Math.min(total, 5.0), 0, 10);
     }
     // Khi đã đọc đầy đủ văn bản, điểm tổng chính là điểm phát âm âm học
@@ -527,12 +539,15 @@ function fallbackHeuristicEval({ questionText, transcript, pronunciationScores, 
   }
 
   // Chuẩn 4 trụ cột IELTS: PR (25%) + FC (25%) + LR (25%) + GRA (25%)
-  let scoreTotal;
-  if (taskType === 'read_aloud') {
-    scoreTotal = clampScore(rawPron, 0, 10);
-  } else {
-    scoreTotal = Math.round(((rawPron * 0.25) + (scoreContext * 0.25) + (scoreLexical * 0.25) + (scoreGrammar * 0.25)) * 10) / 10;
-  }
+  const rawWeightedTotal = (rawPron * 0.25) + (scoreContext * 0.25) + (scoreLexical * 0.25) + (scoreGrammar * 0.25);
+  const scoreTotal = calibrateTotalScoreWithContext(
+    rawWeightedTotal,
+    scoreContext,
+    scoreGrammar,
+    scoreLexical,
+    relevance,
+    taskType,
+  );
 
   return {
     score_total: scoreTotal,
@@ -727,8 +742,16 @@ ${conversationTranscript}
     }
 
     // Điểm tổng thể chính xác 100% là trung bình cộng của 4 trụ cột IELTS:
-    // Overall = PR (25%) + FC (25%) + LR (25%) + GRA (25%)
-    const scoreTotal = Math.round(((rawPronTotal * 0.25) + (scoreContext * 0.25) + (scoreLexical * 0.25) + (scoreGrammar * 0.25)) * 10) / 10;
+    // Overall = PR (25%) + FC (25%) + LR (25%) + GRA (25%) + Gatekeeper
+    const rawWeightedDialogue = (rawPronTotal * 0.25) + (scoreContext * 0.25) + (scoreLexical * 0.25) + (scoreGrammar * 0.25);
+    const scoreTotal = calibrateTotalScoreWithContext(
+      rawWeightedDialogue,
+      scoreContext,
+      scoreGrammar,
+      scoreLexical,
+      scoreContext < 3.0 ? 'irrelevant' : '',
+      'dialogue',
+    );
 
     return {
       score_total: scoreTotal,
@@ -790,8 +813,16 @@ function fallbackConversationHeuristic({ studentTurns, studentFullText, pronunci
     summary = 'Học viên duy trì được mạch hội thoại, có phản xạ tương tác nhưng cần đa dạng hóa từ vựng và cấu trúc ngữ pháp phức.';
   }
 
-  // Chuẩn 4 trụ cột IELTS: PR (25%) + FC (25%) + LR (25%) + GRA (25%)
-  total = Math.round(((rawPron * 0.25) + (ctx * 0.25) + (lex * 0.25) + (gram * 0.25)) * 10) / 10;
+  // Chuẩn 4 trụ cột IELTS: PR (25%) + FC (25%) + LR (25%) + GRA (25%) + Gatekeeper
+  const rawWeighted = (rawPron * 0.25) + (ctx * 0.25) + (lex * 0.25) + (gram * 0.25);
+  total = calibrateTotalScoreWithContext(
+    rawWeighted,
+    ctx,
+    gram,
+    lex,
+    ctx < 3.0 ? 'too_short' : '',
+    'dialogue',
+  );
 
   const fallbackGrammarErrors = [];
   const lowerText = studentFullText.toLowerCase();

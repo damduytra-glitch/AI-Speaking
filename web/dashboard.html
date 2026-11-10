@@ -59,6 +59,8 @@
     <nav class="sidebar-nav d-none" id="adminNav">
       <a href="#" class="nav-item active" data-page="overview"><i class="bi bi-shield-lock"></i><span>Quản
           trị</span></a>
+      <a href="#" class="nav-item" data-page="classroom"><i class="bi bi-soundwave"></i><span>Phân tích Lớp
+          học</span></a>
       <a href="#" class="nav-item" data-page="profile"><i class="bi bi-person-circle"></i><span>Profile</span></a>
     </nav>
 
@@ -123,6 +125,268 @@
                 </tbody>
               </table>
             </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ADMIN CLASSROOM LANGUAGE ANALYSIS -->
+    <div id="page-admin-classroom" class="page-section d-none">
+      <div class="page-header d-flex justify-content-between align-items-start flex-wrap gap-2">
+        <div>
+          <h1 class="page-title"><i class="bi bi-soundwave me-2 text-info"></i>Phân tích Tỷ lệ Tiếng Việt / Tiếng Anh Lớp học</h1>
+          <p class="text-muted small mb-0">
+            Tự động loại bỏ khoảng im lặng (Speech-Only VAD), nhận diện giọng Giáo viên vs Học viên và thống kê % từ Tiếng Việt / Tiếng Anh trong toàn buổi học.
+          </p>
+        </div>
+        <span class="badge bg-info-subtle text-info border border-info-subtle">
+          <i class="bi bi-cpu me-1"></i>Whisper Large-v3 (EN/VI) &bull; ERes2Net Teacher Diarization
+        </span>
+      </div>
+
+      <!-- Input Configuration -->
+      <div class="section-card mb-4">
+        <div class="row g-4">
+          <div class="col-lg-6">
+            <label class="form-label fw-semibold small text-uppercase text-muted mb-2">
+              <i class="bi bi-file-earmark-music me-1 text-primary"></i>1. File ghi âm toàn bộ buổi học *
+            </label>
+            <div class="upload-dropzone" id="classroomDropzone">
+              <i class="bi bi-cloud-upload fs-1 text-info mb-2"></i>
+              <p class="mb-1 fw-semibold">Kéo thả file audio buổi học vào đây</p>
+              <p class="text-muted small mb-2">hoặc nhấn để chọn file từ máy tính</p>
+              <p class="text-muted smaller mb-0">.wav, .mp3, .m4a, .ogg (hỗ trợ buổi học dài đến 60 phút)</p>
+              <input type="file" id="classroomFileInput" class="visually-hidden" accept="audio/*" />
+            </div>
+            <div id="classroomAudioPreview" class="mt-3 d-none">
+              <div class="audio-file-card">
+                <i class="bi bi-file-music text-info fs-3"></i>
+                <div class="flex-grow-1">
+                  <div class="fw-semibold" id="classroomFileName">class.wav</div>
+                  <div class="text-muted small" id="classroomFileSize">0 MB</div>
+                  <audio controls class="w-100 mt-2" id="classroomAudioPlayer"></audio>
+                </div>
+                <button type="button" class="btn btn-sm btn-outline-danger align-self-start" id="removeClassroomBtn" title="Xóa file">
+                  <i class="bi bi-x-lg"></i>
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div class="col-lg-6 d-flex flex-column justify-content-between">
+            <div>
+              <label class="form-label fw-semibold small text-uppercase text-muted mb-2">
+                <i class="bi bi-person-video3 me-1 text-primary"></i>2. Chọn Giáo viên đứng lớp (Mẫu giọng tham chiếu) *
+              </label>
+              <select class="form-select mb-2" id="classroomTeacherSelect">
+                <option value="">-- Đang tải danh sách giáo viên... --</option>
+              </select>
+              <div class="small text-muted mb-3" id="classroomTeacherVoiceHint">
+                Hệ thống dùng mẫu giọng của Giáo viên để tách lời Giáo viên; toàn bộ vùng nói còn lại được gán cho Học viên.
+              </div>
+
+              <div class="row g-3">
+                <div class="col-sm-6">
+                  <label class="form-label text-muted small d-flex justify-content-between mb-1">
+                    <span>Ngưỡng khớp giọng Giáo viên</span>
+                    <span class="fw-bold text-info" id="classroomThresholdVal">0.40</span>
+                  </label>
+                  <input type="range" class="form-range" id="classroomTeacherThreshold" min="0.25" max="0.65" step="0.05" value="0.40" />
+                  <div class="d-flex justify-content-between text-muted" style="font-size: 0.72rem;">
+                    <span>0.25 (Rộng)</span>
+                    <span>0.40 (Chuẩn)</span>
+                    <span>0.65 (Chặt)</span>
+                  </div>
+                </div>
+                <div class="col-sm-6">
+                  <label class="form-label text-muted small mb-1" for="classroomVadThreshold">Ngưỡng lọc im lặng (VAD)</label>
+                  <select class="form-select form-select-sm" id="classroomVadThreshold">
+                    <option value="-45">-45 dB (Phòng yên tĩnh / nói nhỏ)</option>
+                    <option value="-40" selected>-40 dB (Tiêu chuẩn lớp học)</option>
+                    <option value="-35">-35 dB (Lớp ồn / lọc nhiễu mạnh)</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+
+            <div class="mt-4 pt-3 border-top border-secondary border-opacity-25 d-flex align-items-center justify-content-between flex-wrap gap-2">
+              <div class="text-muted smaller">
+                <i class="bi bi-shield-check me-1 text-success"></i>Không chấm điểm phát âm &bull; Chỉ thống kê vùng có tiếng nói
+              </div>
+              <button type="button" class="btn btn-primary btn-glow px-4" id="runClassroomAnalyzeBtn" disabled>
+                <i class="bi bi-play-circle me-2"></i>Phân tích Buổi học
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Loading Card -->
+      <div id="classroomLoading" class="d-none">
+        <div class="section-card mb-4">
+          <div class="d-flex align-items-center gap-3 mb-3">
+            <div class="spinner-border text-info" role="status"></div>
+            <div>
+              <div class="fw-semibold">Đang phân tích ngôn ngữ toàn buổi học...</div>
+              <div class="text-muted small" id="classroomLoadingStep">Đang khởi tạo...</div>
+            </div>
+          </div>
+          <div class="shimmer-bar mb-2"></div>
+          <div class="shimmer-bar w-75 mb-2"></div>
+          <div class="shimmer-bar w-50"></div>
+        </div>
+      </div>
+
+      <!-- Analysis Results -->
+      <div id="classroomResults" class="d-none">
+        <div class="section-card mb-4">
+          <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-4">
+            <div>
+              <h6 class="fw-bold mb-1">
+                <i class="bi bi-pie-chart-fill me-2 text-info"></i>Kết quả Phân bổ Ngôn ngữ Buổi học
+              </h6>
+              <div class="text-muted small" id="classroomResultSubtitle">Giáo viên: --</div>
+            </div>
+            <div class="d-flex gap-2">
+              <button type="button" class="btn btn-sm btn-outline-info" id="exportClassroomCsvBtn">
+                <i class="bi bi-filetype-csv me-1"></i>Xuất CSV
+              </button>
+              <button type="button" class="btn btn-sm btn-outline-primary" id="exportClassroomJsonBtn">
+                <i class="bi bi-filetype-json me-1"></i>Xuất JSON
+              </button>
+            </div>
+          </div>
+
+          <div class="row g-3">
+            <!-- Teacher Card -->
+            <div class="col-lg-4">
+              <div class="p-3 rounded-3 h-100" style="background: rgba(79, 70, 229, 0.10); border: 1px solid rgba(79, 70, 229, 0.30);">
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                  <span class="fw-bold text-primary"><i class="bi bi-person-video3 me-1"></i>Giáo viên (Teacher)</span>
+                  <span class="badge bg-primary-subtle text-primary border border-primary-subtle" id="clsTeacherTurnBadge">0 lượt</span>
+                </div>
+                <div class="d-flex justify-content-between align-items-baseline my-2">
+                  <div>
+                    <div class="smaller text-muted">Tiếng Anh (EN)</div>
+                    <div class="fs-3 fw-bold text-info" id="clsTeacherEnPct">0%</div>
+                  </div>
+                  <div class="text-end">
+                    <div class="smaller text-muted">Tiếng Việt (VI)</div>
+                    <div class="fs-3 fw-bold text-warning" id="clsTeacherViPct">0%</div>
+                  </div>
+                </div>
+                <div class="progress mb-2" style="height: 10px; background: rgba(255,255,255,0.08);">
+                  <div class="progress-bar bg-info" id="clsTeacherEnBar" role="progressbar" style="width: 0%"></div>
+                  <div class="progress-bar bg-warning" id="clsTeacherViBar" role="progressbar" style="width: 0%"></div>
+                </div>
+                <div class="small text-light" id="clsTeacherWordsMeta">0 từ EN &bull; 0 từ VI</div>
+                <div class="smaller text-muted mt-1" id="clsTeacherSpeechMeta">Thời lượng nói: 0.0s</div>
+              </div>
+            </div>
+
+            <!-- Student Card -->
+            <div class="col-lg-4">
+              <div class="p-3 rounded-3 h-100" style="background: rgba(16, 185, 129, 0.09); border: 1px solid rgba(16, 185, 129, 0.28);">
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                  <span class="fw-bold text-success"><i class="bi bi-people-fill me-1"></i>Học viên (Students)</span>
+                  <span class="badge bg-success-subtle text-success border border-success-subtle" id="clsStudentTurnBadge">0 lượt</span>
+                </div>
+                <div class="d-flex justify-content-between align-items-baseline my-2">
+                  <div>
+                    <div class="smaller text-muted">Tiếng Anh (EN)</div>
+                    <div class="fs-3 fw-bold text-info" id="clsStudentEnPct">0%</div>
+                  </div>
+                  <div class="text-end">
+                    <div class="smaller text-muted">Tiếng Việt (VI)</div>
+                    <div class="fs-3 fw-bold text-warning" id="clsStudentViPct">0%</div>
+                  </div>
+                </div>
+                <div class="progress mb-2" style="height: 10px; background: rgba(255,255,255,0.08);">
+                  <div class="progress-bar bg-info" id="clsStudentEnBar" role="progressbar" style="width: 0%"></div>
+                  <div class="progress-bar bg-warning" id="clsStudentViBar" role="progressbar" style="width: 0%"></div>
+                </div>
+                <div class="small text-light" id="clsStudentWordsMeta">0 từ EN &bull; 0 từ VI</div>
+                <div class="smaller text-muted mt-1" id="clsStudentSpeechMeta">Thời lượng nói: 0.0s</div>
+              </div>
+            </div>
+
+            <!-- Overall & VAD Speech/Silence Card -->
+            <div class="col-lg-4">
+              <div class="p-3 rounded-3 h-100" style="background: rgba(14, 165, 233, 0.08); border: 1px solid rgba(14, 165, 233, 0.25);">
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                  <span class="fw-bold text-info"><i class="bi bi-soundwave me-1"></i>Toàn lớp &amp; Vùng nói</span>
+                  <span class="badge bg-info-subtle text-info border border-info-subtle" id="clsSpeechRatioBadge">0% nói</span>
+                </div>
+                <div class="d-flex justify-content-between align-items-baseline my-2">
+                  <div>
+                    <div class="smaller text-muted">Chung EN</div>
+                    <div class="fs-3 fw-bold text-info" id="clsOverallEnPct">0%</div>
+                  </div>
+                  <div class="text-end">
+                    <div class="smaller text-muted">Chung VI</div>
+                    <div class="fs-3 fw-bold text-warning" id="clsOverallViPct">0%</div>
+                  </div>
+                </div>
+                <div class="progress mb-2" style="height: 10px; background: rgba(255,255,255,0.08);">
+                  <div class="progress-bar bg-info" id="clsOverallEnBar" role="progressbar" style="width: 0%"></div>
+                  <div class="progress-bar bg-warning" id="clsOverallViBar" role="progressbar" style="width: 0%"></div>
+                </div>
+                <div class="smaller text-light d-flex justify-content-between mt-2">
+                  <span>Tổng file audio:</span>
+                  <strong id="clsTotalAudioSec">0.0s</strong>
+                </div>
+                <div class="smaller text-success d-flex justify-content-between">
+                  <span>Vùng tiếng nói (đã tính):</span>
+                  <strong id="clsTotalSpeechSec">0.0s</strong>
+                </div>
+                <div class="smaller text-muted d-flex justify-content-between">
+                  <span>Im lặng (đã loại bỏ):</span>
+                  <strong id="clsSilenceSec">0.0s</strong>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Segments Breakdown -->
+        <div class="section-card">
+          <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+            <h6 class="fw-bold mb-0">
+              <i class="bi bi-list-ul me-2 text-primary"></i>Chi tiết từng vùng nói (<span id="clsVisibleCount">0</span>/<span id="clsTotalSegCount">0</span>)
+            </h6>
+            <div class="d-flex gap-2 flex-wrap">
+              <select class="form-select form-select-sm" style="width: auto;" id="classroomRoleFilter">
+                <option value="">Tất cả vai trò</option>
+                <option value="teacher">Chỉ Giáo viên</option>
+                <option value="student">Chỉ Học viên</option>
+              </select>
+              <select class="form-select form-select-sm" style="width: auto;" id="classroomLangFilter">
+                <option value="">Tất cả ngôn ngữ</option>
+                <option value="has_vi">Có Tiếng Việt (VI &gt; 0%)</option>
+                <option value="only_en">Thuần Tiếng Anh (100% EN)</option>
+              </select>
+              <input type="text" class="form-control form-control-sm" style="width: 210px;" id="classroomSearchInput" placeholder="Tìm từ trong transcript..." />
+            </div>
+          </div>
+
+          <div class="table-responsive" style="max-height: 520px; overflow-y: auto;">
+            <table class="table table-hover table-sm align-middle mb-0">
+              <thead class="sticky-top" style="background: #111827; z-index: 1;">
+                <tr>
+                  <th style="width: 48px;">#</th>
+                  <th style="width: 120px;">Thời gian</th>
+                  <th style="width: 115px;">Vai trò</th>
+                  <th style="width: 165px;">Tỷ lệ EN / VI</th>
+                  <th style="width: 90px;">Khớp GV</th>
+                  <th>Nội dung phiên âm (Whisper Large-v3)</th>
+                </tr>
+              </thead>
+              <tbody id="classroomSegmentsBody">
+                <tr>
+                  <td colspan="6" class="text-center text-muted py-4">Chưa có dữ liệu phân tích</td>
+                </tr>
+              </tbody>
+            </table>
           </div>
         </div>
       </div>
@@ -1136,7 +1400,7 @@
                 onerror="this.src='https://ui-avatars.com/api/?name=User&background=4F46E5&color=fff&size=200'" />
             </div>
             <div class="fw-bold fs-5" id="profileName">--</div>
-            <span class="badge bg-primary mt-1">Học viên</span>
+            <span class="badge bg-primary mt-1" id="profileRoleBadge">Học viên</span>
             <hr />
             <div class="text-muted small" id="profileEmail">--</div>
             <div class="text-muted small" id="profilePhone">--</div>
@@ -1353,7 +1617,7 @@
 
   <!-- Bootstrap JS -->
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-  <script type="module" src="js/dashboard.js?v=24"></script>
+  <script type="module" src="js/dashboard.js?v=26"></script>
 </body>
 
 </html>

@@ -1,15 +1,19 @@
 """
-Script sinh SpeakAI-Colab.ipynb - standalone, audio đã upload, không L2-MDD, không HuggingFace config.
-%%writefile luôn phải là dòng ĐẦU TIÊN của cell → mkdir tách thành cell riêng.
+Script sinh SpeakAI-Kaggle-Setup.ipynb và SpeakAI-Kaggle-Run.ipynb (dual-GPU Kaggle).
+%%writefile luôn phải là dòng ĐẦU TIÊN của cell -> mkdir tách thành cell riêng.
 """
 import json
 import os
+import sys
 from pathlib import Path
 
-ROOT = str(Path(__file__).resolve().parent)
+ROOT = str(Path(__file__).resolve().parent.parent)
+if ROOT not in sys.path:
+    sys.path.insert(0, ROOT)
 
 INCLUDE_FILES = [
     "paths.py",
+    "env_config.py",
     "backend_api.py",
     "configs/pronunciation.yaml",
     "data/audio_preprocess.py",
@@ -34,6 +38,10 @@ INCLUDE_FILES = [
     "infer/pipeline.py",
     "infer/pronunciation.py",
     "infer/transcribe.py",
+    "classroom_lang/__init__.py",
+    "classroom_lang/vad_diarize.py",
+    "classroom_lang/analyzer.py",
+    "classroom_lang/cli.py",
     "speaker-diarize/speaker_diarize/__init__.py",
     "speaker-diarize/speaker_diarize/audio_io.py",
     "speaker-diarize/speaker_diarize/clustering.py",
@@ -76,7 +84,7 @@ inference:
   max_upload_mb: 300
 
 asr:
-  model_name: pretrained_models/whisper-large-v3
+  model_name: openai/whisper-large-v3
   language: en
   device: cuda:0
   torch_dtype: float16
@@ -86,6 +94,32 @@ asr:
     drop_languages: [vi, vie, vietnamese]
     min_confidence: 0.45
     text_vi_regex: false
+
+eligibility:
+  min_duration_sec: 1.0
+  min_words: 2
+  backchannel_words:
+    - yes
+    - no
+    - yeah
+    - yep
+    - ok
+    - okay
+    - sure
+    - uh
+    - um
+    - ah
+    - hmm
+    - right
+    - alright
+    - oh
+    - cool
+    - thank you
+    - thanks
+    - bye
+    - bye bye
+    - hello
+    - hi
 
 wavlm:
   model_name: pretrained_models/wavlm-large
@@ -131,8 +165,8 @@ scorer:
   phoneme_low_threshold: 1.2
   calibration:
     enabled: true
-    slope: 1.25
-    offset: -2.20
+    slope: 1.20
+    offset: -2.80
     short_duration_sec: 3.5
     short_duration_factor: 0.40
     long_duration_sec: 4.0
@@ -157,28 +191,8 @@ diarization:
   min_similarity_threshold: 0.40
 """
 
-# models/__init__.py
-MODELS_INIT_CLEAN = """\
-from .wavlm_encoder import WavLMEncoder
-from .transformer_encoder import TaskTransformerEncoder
-from .ctc_aligner import CTCAligner
-from .phoneme_graph import PhonemeGraphNetwork
-from .multitask_heads import MultiTaskHeads
-from .pronunciation_scorer import PronunciationScorer
-from .pronunciation_model import PronunciationAssessmentModel
-from .l2_mdd_model import L2MDDModel
-from .asha_phonology import ASHAPhonologicalAnalyzer
-
-__all__ = [
-    "WavLMEncoder", "TaskTransformerEncoder", "CTCAligner",
-    "PhonemeGraphNetwork", "MultiTaskHeads", "PronunciationScorer",
-    "PronunciationAssessmentModel", "L2MDDModel", "ASHAPhonologicalAnalyzer",
-]
-"""
-
 OVERRIDES = {
     "configs/pronunciation.yaml": YAML_CLEAN,
-    "models/__init__.py": MODELS_INIT_CLEAN,
 }
 
 def read_file(rel_path):
@@ -248,6 +262,7 @@ setup_cells.append(code_cell([
     "os.makedirs(f'{TARGET_DIR}/data', exist_ok=True)\n",
     "os.makedirs(f'{TARGET_DIR}/models', exist_ok=True)\n",
     "os.makedirs(f'{TARGET_DIR}/infer', exist_ok=True)\n",
+    "os.makedirs(f'{TARGET_DIR}/classroom_lang', exist_ok=True)\n",
     "os.makedirs(f'{TARGET_DIR}/speaker-diarize/speaker_diarize', exist_ok=True)\n",
     "os.makedirs(f'{TARGET_DIR}/pretrained_models', exist_ok=True)\n",
     "os.makedirs(f'{TARGET_DIR}/transformer_models', exist_ok=True)\n",
@@ -294,7 +309,7 @@ setup_cells.append(code_cell([
     "print('ALL SETUP COMPLETED!')"
 ]))
 
-setup_cells.append(md_cell(["---\n", "### Tải LLM Qwen, Whisper, WavLM, DeepFilterNet vào Kaggle"]))
+setup_cells.append(md_cell(["---\n", "### Tải Whisper-large-v3, WavLM, Lang-ID & DeepFilterNet vào Kaggle"]))
 setup_cells.append(code_cell([
     "import os\n",
     "import torch\n",
@@ -308,8 +323,12 @@ setup_cells.append(code_cell([
     "LANG_ID_DIR = f'{TARGET_DIR}/pretrained_models/lang-id-voxlingua107-ecapa'\n",
     "\n",
     "def download_model(repo_id, local_dir, ignore_patterns):\n",
+    "    import inspect\n",
     "    if not os.path.exists(local_dir):\n",
-    "        snapshot_download(repo_id=repo_id, local_dir=local_dir, ignore_patterns=ignore_patterns, local_dir_use_symlinks=False)\n",
+    "        dl_kw = {'repo_id': repo_id, 'local_dir': local_dir, 'ignore_patterns': ignore_patterns}\n",
+    "        if 'local_dir_use_symlinks' in inspect.signature(snapshot_download).parameters:\n",
+    "            dl_kw['local_dir_use_symlinks'] = False\n",
+    "        snapshot_download(**dl_kw)\n",
     "        shutil.rmtree('/tmp/hf_cache', ignore_errors=True)\n",
     "        shutil.rmtree('/root/.cache/huggingface', ignore_errors=True)\n",
     "    else:\n",
@@ -330,8 +349,8 @@ setup_cells.append(code_cell([
     "shutil.rmtree('/tmp/hf_cache', ignore_errors=True)\n",
     "shutil.rmtree('/root/.cache/huggingface', ignore_errors=True)\n",
     "\n",
-    "print('Downloading Whisper model (offline caching)...')\n",
-    "download_model('openai/whisper-large-v3', WHISPER_DIR, ['*.h5', '*.ot', '*.msgpack', 'pytorch_model.bin', '*.onnx', '*.mlmodel', '*coreml*', '*.tflite', '*.pb', '*.ckpt'])\n",
+    "print('Downloading Whisper model (openai/whisper-large-v3, offline caching)...')\n",
+    "download_model('openai/whisper-large-v3', WHISPER_DIR, ['*.h5', '*.ot', '*.msgpack', '*.bin', '*fp32*', '*.onnx', '*.mlmodel', '*coreml*', '*.tflite', '*.pb', '*.ckpt'])\n",
     "\n",
     "print('Downloading WavLM model (offline caching)...')\n",
     "download_model('microsoft/wavlm-large', WAVLM_DIR, ['*.h5', '*.ot', '*.msgpack', '*.onnx', '*.mlmodel', '*coreml*', '*.tflite', '*.pb', '*.ckpt'])\n",
@@ -421,140 +440,29 @@ run_cells.append(code_cell([
     "# Lưu cache HuggingFace vào MODEL_DIR (nếu có thể) hoặc /kaggle/working\n",
     "os.environ['HF_HOME'] = '/kaggle/working/hf_cache'\n",
     "\n",
-    "import builtins\n",
-    "import torch, yaml\n",
-    "builtins.torch = torch\n",
-    "import infer.pipeline as ip_mod\n",
-    "ip_mod.torch = torch\n",
+    "import yaml\n",
     "from infer.pipeline import SpeakingPipeline\n",
-    "from transformers import AutoModelForCausalLM, AutoTokenizer\n",
+    "from speaker_diarize.embedding import ERes2NetEmbedder\n",
     "\n",
-    "print('Patching config dynamically...')\n",
-    "with open(f'{SOURCE_DIR}/configs/pronunciation.yaml', 'r') as f:\n",
+    "print('Writing runtime dual-GPU config...')\n",
+    "with open(f'{SOURCE_DIR}/configs/pronunciation.yaml', 'r', encoding='utf-8') as f:\n",
     "    cfg = yaml.safe_load(f)\n",
-    "cfg['asr']['model_name'] = f'{MODEL_DIR}/pretrained_models/whisper-large-v3'\n",
+    "whisper_local = f'{MODEL_DIR}/pretrained_models/whisper-large-v3'\n",
+    "cfg['asr']['model_name'] = whisper_local if os.path.isdir(whisper_local) else 'openai/whisper-large-v3'\n",
     "cfg['wavlm']['model_name'] = f'{MODEL_DIR}/pretrained_models/wavlm-large'\n",
     "cfg['paths']['pronunciation_checkpoint'] = PRONUNCIATION_PATH\n",
     "if L2_MDD_PATH:\n",
     "    cfg['paths']['l2_mdd_checkpoint'] = L2_MDD_PATH\n",
     "os.makedirs('/kaggle/working/tmp_configs', exist_ok=True)\n",
     "tmp_config = '/kaggle/working/tmp_configs/pronunciation.yaml'\n",
-    "with open(tmp_config, 'w') as f:\n",
+    "with open(tmp_config, 'w', encoding='utf-8') as f:\n",
     "    yaml.dump(cfg, f)\n",
-    "\n",
-    "print('Patching transcribe.py dynamically...')\n",
-    "import infer.transcribe\n",
-    "def patched_load_asr_config():\n",
-    "    with open(tmp_config, encoding='utf-8') as f:\n",
-    "        return yaml.safe_load(f).get('asr') or {}\n",
-    "infer.transcribe._load_asr_config = patched_load_asr_config\n",
-    "\n",
-    "print('Patching speaker_diarize.embedding dynamically...')\n",
-    "import speaker_diarize.embedding as sd_emb\n",
-    "from modelscope.hub.snapshot_download import snapshot_download\n",
-    "\n",
-    "def _resolve_eres_model():\n",
-    "    HUB_ID = 'damo/speech_eres2net_large_200k_sv_zh-cn_16k-common'\n",
-    "    for search_root in ['/kaggle/working', '/kaggle/input']:\n",
-    "        if os.path.exists(search_root):\n",
-    "            for root, dirs, files in os.walk(search_root):\n",
-    "                if 'pretrained_eres2net.pt' in files and 'configuration.json' in files:\n",
-    "                    p = os.path.join(root, 'pretrained_eres2net.pt')\n",
-    "                    if os.path.getsize(p) > 10_000_000:\n",
-    "                        print(f'✅ Found valid ERes2Net checkpoint: {root}')\n",
-    "                        return root\n",
-    "    print(f'⬇️ Downloading {HUB_ID} via ModelScope snapshot_download...')\n",
-    "    return snapshot_download(HUB_ID)\n",
-    "\n",
-    "ERES_PATH = _resolve_eres_model()\n",
-    "sd_emb.DEFAULT_MODEL_ID = ERES_PATH\n",
-    "if hasattr(sd_emb, 'resolve_eres2net_model'):\n",
-    "    sd_emb.resolve_eres2net_model = lambda mid=None: ERES_PATH if (not mid or not os.path.isfile(os.path.join(mid, 'pretrained_eres2net.pt'))) else mid\n",
-    "_orig_eres_init = sd_emb.ERes2NetEmbedder.__init__\n",
-    "def _patched_eres_init(self, device='cuda', model_id=None):\n",
-    "    if not model_id or not os.path.isfile(os.path.join(model_id, 'pretrained_eres2net.pt')):\n",
-    "        model_id = ERES_PATH\n",
-    "    return _orig_eres_init(self, device=device, model_id=model_id)\n",
-    "sd_emb.ERes2NetEmbedder.__init__ = _patched_eres_init\n",
-    "\n",
-    "print('Patching data.silence_split dynamically...')\n",
-    "import data.silence_split as ss_mod\n",
-    "_orig_ss_from_dict = ss_mod.SilenceSplitConfig.from_dict\n",
-    "def _safe_ss_from_dict(cfg):\n",
-    "    if isinstance(cfg, ss_mod.SilenceSplitConfig):\n",
-    "        return cfg\n",
-    "    if hasattr(cfg, '__dict__') and not isinstance(cfg, dict):\n",
-    "        cfg = vars(cfg)\n",
-    "    if not isinstance(cfg, dict):\n",
-    "        return ss_mod.SilenceSplitConfig()\n",
-    "    return _orig_ss_from_dict(cfg)\n",
-    "ss_mod.SilenceSplitConfig.from_dict = classmethod(lambda cls, cfg: _safe_ss_from_dict(cfg))\n",
-    "\n",
-    "print('Patching infer.pipeline._build_dialogue dynamically...')\n",
-    "import infer.pipeline as ip_mod\n",
-    "def _patched_build_dialogue(teacher_sentences, student_sentences):\n",
-    "    turns = []\n",
-    "    for s in teacher_sentences:\n",
-    "        turns.append({\n",
-    "            'role': 'teacher',\n",
-    "            'scored': bool(s.get('scored') and s.get('scores')),\n",
-    "            'start_sec': s.get('start_sec'),\n",
-    "            'end_sec': s.get('end_sec'),\n",
-    "            'transcript': s.get('transcript', ''),\n",
-    "            'audio': s.get('audio'),\n",
-    "            'scores': s.get('scores'),\n",
-    "            'errors': s.get('errors'),\n",
-    "            'transformer_feedback': s.get('transformer_feedback'),\n",
-    "            'words_detail': s.get('words_detail'),\n",
-    "            'l2_mdd_feedback': s.get('l2_mdd_feedback'),\n",
-    "        })\n",
-    "    for s in student_sentences:\n",
-    "        turns.append({\n",
-    "            'role': 'student',\n",
-    "            'scored': True,\n",
-    "            'start_sec': s.get('start_sec'),\n",
-    "            'end_sec': s.get('end_sec'),\n",
-    "            'transcript': s.get('transcript', ''),\n",
-    "            'audio': s.get('audio'),\n",
-    "            'scores': s.get('scores'),\n",
-    "            'errors': s.get('errors'),\n",
-    "            'transformer_feedback': s.get('transformer_feedback'),\n",
-    "            'words_detail': s.get('words_detail'),\n",
-    "            'l2_mdd_feedback': s.get('l2_mdd_feedback'),\n",
-    "        })\n",
-    "    turns.sort(key=lambda t: (t.get('start_sec') or 0, 0 if t['role'] == 'teacher' else 1))\n",
-    "    student_turns = []\n",
-    "    last_teacher = None\n",
-    "    for t in turns:\n",
-    "        if t['role'] == 'teacher':\n",
-    "            last_teacher = t\n",
-    "        else:\n",
-    "            student_turns.append({\n",
-    "                **t,\n",
-    "                'teacher_prompt': last_teacher['transcript'] if last_teacher else None,\n",
-    "                'teacher_prompt_start_sec': last_teacher.get('start_sec') if last_teacher else None,\n",
-    "                'teacher_prompt_end_sec': last_teacher.get('end_sec') if last_teacher else None,\n",
-    "                'teacher_prompt_audio': last_teacher.get('audio') if last_teacher else None,\n",
-    "            })\n",
-    "    return {'turns': turns, 'student_turns': student_turns}\n",
-    "ip_mod._build_dialogue = _patched_build_dialogue\n",
-    "\n",
-    "print('Patching WhisperTranscriber._generate for max_new_tokens safety...')\n",
-    "import infer.transcribe as it_mod\n",
-    "if hasattr(it_mod, 'WhisperTranscriber'):\n",
-    "    _orig_wt_gen = it_mod.WhisperTranscriber._generate\n",
-    "    def _patched_wt_gen(self, input_features):\n",
-    "        if not hasattr(self, 'max_new_tokens') or self.max_new_tokens > 440:\n",
-    "            self.max_new_tokens = 440\n",
-    "        return _orig_wt_gen(self, input_features)\n",
-    "    it_mod.WhisperTranscriber._generate = _patched_wt_gen\n",
     "\n",
     "print('=== KHỞI TẠO PIPELINE PARALLELISM TRÊN 2 GPU (NVIDIA T4 x 2) ===')\n",
     "print('  GPU 0 (cuda:0): Whisper-large-v3 ASR + TwoSpeakerSplitter + Registration Embedder')\n",
     "print('  GPU 1 (cuda:1): SpeechOcean762 (WavLM-large + GAT) + L2-MDD (WavLM-large + CTC)')\n",
     "\n",
     "print('Loading Registration Model on GPU 0 (cuda:0)...')\n",
-    "from speaker_diarize.embedding import ERes2NetEmbedder\n",
     "extract_embedder = ERes2NetEmbedder(device='cuda:0')\n",
     "print('Registration Embedder ready on cuda:0!')\n",
     "\n",
@@ -656,8 +564,17 @@ run_cells.append(code_cell([
 
 run_cells.append(md_cell(["---\n", "## Khởi chạy Backend API (FastAPI + Cloudflare Tunnel)"]))
 
+from env_config import get_supabase_config
+
+_KAGGLE_SUPABASE_URL, _KAGGLE_SUPABASE_ANON_KEY = get_supabase_config()
+
 # Pre-backend cell: start tunnel and register globals
 run_cells.append(code_cell([
+    "# Public Supabase config cho Kaggle Notebook (ưu tiên env/Kaggle Secrets nếu có)\n",
+    "import os\n",
+    f"os.environ.setdefault('SUPABASE_URL', {_KAGGLE_SUPABASE_URL!r})\n",
+    f"os.environ.setdefault('SUPABASE_ANON_KEY', {_KAGGLE_SUPABASE_ANON_KEY!r})\n",
+    "\n",
     "# Setup tunnel and inject globals into backend_api\n",
     "import backend_api\n",
     "import builtins\n",

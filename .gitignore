@@ -1,34 +1,84 @@
-# Docs (binary — không push lên HF Space)
-docs/*.docx
-kaggle/*.pdf
+# ============================================================
+# Secrets & Local Runtime Configs (NEVER commit!)
+# ============================================================
+.env
+.env.*
+!.env.example
+web/js/config.js
+kaggle.json
+.kaggle/
+*.pem
+*.key
 
-# Local data & artifacts
+# ============================================================
+# Pretrained Models, Checkpoints & Large Binary Weights
+# ============================================================
+pretrained_models/*/
+!pretrained_models/.gitkeep
+speaker-diarize/pretrained_models/
+transformer_models/
+checkpoints/
+web/models/
+*.pt
+*.pth
+*.safetensors
+*.bin
+*.onnx
+*.ckpt
+
+# ============================================================
+# Datasets, Audio Uploads & Generated Outputs
+# ============================================================
 data/speechocean762/
 data/l2-arctic/
-checkpoints/
-logs/
 sample_audio/
-transformer_models/*.pt
 web/uploads/
-web/models/
-*.onnx
+speaker-diarize/audio_split/
+speaker-diarize/logs/
+docs/*.docx
+kaggle/*.pdf
+logs/
+*.log
+*.tmp
+tmp_*/
+*.zip
+*.tar
+*.tar.gz
+*.tgz
+nul
 
-# Secrets
-.env
-
-# Python
+# ============================================================
+# Python Environments, Caches & Build Artifacts
+# ============================================================
 __pycache__/
 *.py[cod]
+*$py.class
+*.egg-info/
+build/
+dist/
 .venv/
 venv/
-
-# ecapa-diarize runtime outputs
-ecapa-diarize/audio_split/
-ecapa-diarize/logs/
-ecapa-diarize/.pytest_cache/
-ecapa-diarize/pretrained_models/
-pretrained_models/lang-id-voxlingua107-ecapa/
-
-transformer_models/
 venv_dfn/
+.pytest_cache/
+speaker-diarize/.pytest_cache/
+.mypy_cache/
+.ruff_cache/
 torch_hub/
+.hf_tmp_cache/
+hf_cache/
+
+# ============================================================
+# Local Workspace & OS / IDE Files
+# ============================================================
+thesis-generator/
+.DS_Store
+Thumbs.db
+desktop.ini
+.vscode/
+.idea/
+
+.DS_Store
+Thumbs.db
+desktop.ini
+.vscode/
+.idea/

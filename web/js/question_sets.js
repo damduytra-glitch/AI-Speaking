@@ -115,7 +115,7 @@ export async function updateQuestionSetPermissions(setId, allowedTeacherIds = []
     if (error) throw error;
   } catch (err) {
     if (err.message?.includes('allowed_teacher_ids') || err.code === '42703' || err.code === 'PGRST204') {
-      throw new Error('Database Supabase chưa có cột allowed_teacher_ids. Vui lòng chạy lệnh SQL migration trong speak_web_schema.sql!');
+      throw new Error('Database Supabase chưa có cột allowed_teacher_ids. Vui lòng chạy lệnh SQL migration trong supabase/speak_web_schema.sql!');
     }
     throw err;
   }
@@ -485,17 +485,4 @@ export async function deleteQuestion(questionId) {
     .delete()
     .eq('id', questionId);
   if (error) throw error;
-}
-
-/**
- * Cập nhật thứ tự nhiều câu hỏi cùng lúc
- */
-export async function reorderQuestions(questions) {
-  for (const q of questions) {
-    const { error } = await supabase
-      .from('questions')
-      .update({ order_num: q.order_num })
-      .eq('id', q.id);
-    if (error) throw error;
-  }
 }

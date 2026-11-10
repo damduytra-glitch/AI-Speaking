@@ -1,6 +1,6 @@
 -- ==============================================================================
 -- SpeakAI Web Platform - Seed Data (Bộ đề & Câu hỏi đơn giản, không chứa gợi ý câu trả lời)
--- Project: SpeakAI (https://kngkckshvgaqeiatryqy.supabase.co)
+-- Project: SpeakAI (configure SUPABASE_URL in `.env`)
 -- Formats: VSTEP, IELTS, TOEIC, Giao tiếp hàng ngày (General English)
 -- Instructions: Chạy script này trong Supabase SQL Editor sau khi chạy speak_web_schema.sql.
 -- ==============================================================================

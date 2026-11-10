@@ -341,9 +341,7 @@ class PronunciationScorer:
         if pa is not None and isinstance(pa, torch.Tensor):
             for i, (tok, score) in enumerate(zip(phoneme_tokens, pa.tolist())):
                 display_score = self.to_display_scale(score, is_phone=True)
-                valid = True
-
-                if valid and display_score < display_thr:
+                if display_score < display_thr:
                     w_info = phone_to_word.get(i, {})
                     errors["phonemes"].append(
                         {
@@ -365,9 +363,7 @@ class PronunciationScorer:
                 stress_score = wt_stress[i].item() if (wt_stress is not None and isinstance(wt_stress, torch.Tensor) and i < len(wt_stress)) else acc_score
                 combined_score = (acc_score + stress_score) / 2.0
                 display_score = self.to_display_scale(combined_score)
-                valid = True
-
-                if valid and display_score < display_thr:
+                if display_score < display_thr:
                     w_ipa = word_ipas[i] if i < len(word_ipas) else ""
                     errors["words"].append(
                         {

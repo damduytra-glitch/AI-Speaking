@@ -901,34 +901,10 @@ body {
   margin-top: 1rem;
   animation: slidein 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
-.answer-result-card .result-scores {
-  display: flex;
-  gap: 0.5rem;
-  flex-wrap: wrap;
-  margin-bottom: 0.75rem;
-}
-.answer-result-card .result-score-item {
-  background: rgba(255, 255, 255, 0.05);
-  border-radius: 0.5rem;
-  padding: 0.5rem 0.75rem;
-  text-align: center;
-  flex: 1;
-  min-width: 70px;
-}
-.answer-result-card .result-score-item .score-label {
-  font-size: 0.65rem;
-  text-transform: uppercase;
-  color: var(--color-text-muted);
-  letter-spacing: 0.5px;
-}
-.answer-result-card .result-score-item .score-val {
-  font-size: 1.2rem;
-  font-weight: 700;
-}
-.answer-result-card .result-score-item .score-val.excellent { color: #34d399; }
-.answer-result-card .result-score-item .score-val.good { color: #38bdf8; }
-.answer-result-card .result-score-item .score-val.average { color: #fbbf24; }
-.answer-result-card .result-score-item .score-val.poor { color: #f87171; }
+.result-score-item .score-val.excellent { color: #34d399; }
+.result-score-item .score-val.good { color: #38bdf8; }
+.result-score-item .score-val.average { color: #fbbf24; }
+.result-score-item .score-val.poor { color: #f87171; }
 
 /* ── PRACTICE SUMMARY ────────────────────────────────────── */
 .practice-summary {

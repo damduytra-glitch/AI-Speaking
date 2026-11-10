@@ -29,7 +29,7 @@ inference:
   max_upload_mb: 300
 
 asr:
-  model_name: pretrained_models/whisper-large-v3
+  model_name: openai/whisper-large-v3
   language: en
   device: cuda
   torch_dtype: float16
@@ -39,6 +39,32 @@ asr:
     drop_languages: [vi, vie, vietnamese]
     min_confidence: 0.45
     text_vi_regex: false
+
+eligibility:
+  min_duration_sec: 1.0
+  min_words: 2
+  backchannel_words:
+    - yes
+    - no
+    - yeah
+    - yep
+    - ok
+    - okay
+    - sure
+    - uh
+    - um
+    - ah
+    - hmm
+    - right
+    - alright
+    - oh
+    - cool
+    - thank you
+    - thanks
+    - bye
+    - bye bye
+    - hello
+    - hi
 
 wavlm:
   model_name: microsoft/wavlm-large

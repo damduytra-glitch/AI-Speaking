@@ -1,14 +1,11 @@
+import os
+import warnings
+
 import numpy as np
 import torch
 import torchaudio
-import warnings
-
-# Tắt cảnh báo librosa/modelscope
-warnings.filterwarnings("ignore")
 
 SAMPLE_RATE = 16000
-
-import os
 HUB_MODEL_ID = "damo/speech_eres2net_large_200k_sv_zh-cn_16k-common"
 DEFAULT_MODEL_ID = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "pretrained_models", "speech_eres2net_large_200k_sv_zh-cn_16k-common")
 
@@ -99,11 +96,13 @@ class ERes2NetEmbedder:
         # Initialize pipeline
         name = resolved_model.replace("\\", "/").rstrip("/").split("/")[-1]
         print(f"[{name}] Loading ERes2Net model from '{resolved_model}'...")
-        self.sv_pipeline = pipeline(
-            task='speaker-verification',
-            model=resolved_model,
-            device=self.device
-        )
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            self.sv_pipeline = pipeline(
+                task='speaker-verification',
+                model=resolved_model,
+                device=self.device
+            )
         print(f"[{name}] ERes2Net model loaded successfully on {self.device}!")
 
         # ── Trích xuất raw PyTorch model từ ModelScope pipeline để dùng embed_direct/embed_batch ──
@@ -210,11 +209,8 @@ class ERes2NetEmbedder:
         if not fbanks:
             return []
 
-        # Pad tất cả fbanks về cùng chiều dài (num_frames có thể khác nhau giữa các windows)
-        max_frames = max(fb.shape[1] for fb in fbanks)
-        n_mels = fbanks[0].shape[2]
-        
         # Chia thành các mini-batch để tránh tràn VRAM với file audio rất dài
+        n_mels = fbanks[0].shape[2]
         BATCH_SIZE = 64
         all_embeddings = [None] * len(audio_list)
         

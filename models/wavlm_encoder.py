@@ -95,7 +95,7 @@ class WavLMEncoder(nn.Module):
         if self._frozen:
             self.wavlm.eval()
 
-        ctx = torch.inference_mode if self._frozen else nullcontext
+        ctx = torch.no_grad if self._frozen else nullcontext
         with ctx():
             outputs = self.wavlm(
                 input_values=waveform,

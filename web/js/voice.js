@@ -31,12 +31,35 @@ export async function uploadVoiceSample(userId, audioBlob, filename = 'voice_sam
 }
 
 /**
- * Đánh dấu user đã enroll giọng thành công
+ * Lưu speaker embeddings và đánh dấu user đã enroll giọng thành công
+ * Không ghi đè voice_sample_url bằng chuỗi rỗng nếu chưa có URL mới.
  */
-export async function markVoiceEnrolled(userId, voiceUrl) {
+export async function saveVoiceEmbeddings(userId, voiceEmbeddings, voiceUrl = null) {
+  const payload = {
+    voice_embeddings: voiceEmbeddings,
+    voice_enrolled: true,
+  };
+  if (voiceUrl) {
+    payload.voice_sample_url = voiceUrl;
+  }
   const { error } = await supabase
     .from('profiles')
-    .update({ voice_sample_url: voiceUrl, voice_enrolled: true })
+    .update(payload)
+    .eq('id', userId);
+  if (error) throw error;
+}
+
+/**
+ * Đánh dấu user đã enroll giọng thành công
+ */
+export async function markVoiceEnrolled(userId, voiceUrl = null) {
+  const payload = { voice_enrolled: true };
+  if (voiceUrl) {
+    payload.voice_sample_url = voiceUrl;
+  }
+  const { error } = await supabase
+    .from('profiles')
+    .update(payload)
     .eq('id', userId);
   if (error) throw error;
 }

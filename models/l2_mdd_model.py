@@ -96,6 +96,8 @@ class L2MDDModel(nn.Module):
         lora_r: int = 8,
         lora_alpha: int = 16,
         lora_target_modules: Optional[List[str]] = None,
+        use_canon_conditioning: bool = True,
+        canon_emb_dim: int = 256,
     ):
         super().__init__()
         self.wavlm = WavLMEncoder(
@@ -118,6 +120,18 @@ class L2MDDModel(nn.Module):
         )
 
         self.ctc_aligner = CTCAligner(input_dim=d, use_pretrained_bundle=False)
+        self.use_canon_conditioning = bool(use_canon_conditioning)
+        if self.use_canon_conditioning:
+            self.canon_emb = nn.Embedding(self.ctc_aligner.num_tokens, canon_emb_dim)
+            self.node_fusion = nn.Sequential(
+                nn.Linear(d + canon_emb_dim + 4, d),
+                nn.LayerNorm(d),
+                nn.GELU(),
+            )
+        else:
+            self.canon_emb = None
+            self.node_fusion = None
+
         self.phoneme_graph = PhonemeGraphNetwork(
             input_dim=d,
             hidden_dim=graph_hidden,
@@ -129,6 +143,45 @@ class L2MDDModel(nn.Module):
             edge_same_syllable=False,
         )
         self.mdd_head = PhonemeMDDHead(input_dim=graph_hidden, num_classes=num_classes)
+
+    def _condition_nodes(
+        self,
+        acoustic_nodes: torch.Tensor,
+        ctc_log_probs_uttr: torch.Tensor,
+        spans: List[PhonemeAlignment],
+        phoneme_tokens: List[str],
+    ) -> torch.Tensor:
+        if not self.use_canon_conditioning or self.canon_emb is None or acoustic_nodes.shape[0] == 0:
+            return acoustic_nodes
+        N = acoustic_nodes.shape[0]
+        device = acoustic_nodes.device
+        target_ids = self.ctc_aligner.phonemes_to_ids(phoneme_tokens[:N]).to(device)
+        canon_vecs = self.canon_emb(target_ids)
+
+        T_u = ctc_log_probs_uttr.shape[0]
+        probs = ctc_log_probs_uttr.detach().float().exp()
+        cues = []
+        for i in range(N):
+            tid = int(target_ids[i].item())
+            sp = spans[i] if i < len(spans) else None
+            if sp is not None and T_u > 0:
+                sf = max(0, min(T_u - 1, int(sp.start_frame)))
+                ef = max(sf, min(T_u - 1, int(sp.end_frame)))
+                seg = probs[sf : ef + 1]
+                p_tgt = seg[:, tid].max() if tid < seg.shape[1] else acoustic_nodes.new_tensor(0.0)
+                p_blk = seg[:, 0].mean()
+                other = seg.clone()
+                other[:, :3] = 0.0
+                if tid < other.shape[1]:
+                    other[:, tid] = 0.0
+                p_oth = other.max()
+                dur_norm = min(1.0, (ef - sf + 1) / 10.0)
+                cues.append(torch.stack([p_tgt, p_blk, p_oth, p_tgt.new_tensor(dur_norm)]))
+            else:
+                cues.append(acoustic_nodes.new_zeros(4))
+        cues_t = torch.stack(cues, dim=0).to(device=device, dtype=acoustic_nodes.dtype)
+        fused = torch.cat([acoustic_nodes, canon_vecs.to(dtype=acoustic_nodes.dtype), cues_t], dim=-1)
+        return self.node_fusion(fused)
 
     @torch.no_grad()
     def forward_utterance(
@@ -162,14 +215,16 @@ class L2MDDModel(nn.Module):
 
         # Forced alignment & pooled phoneme node features
         T_0 = int(frame_lengths[0].item())
+        ctc_logits = self.ctc_aligner.ctc_proj(frame_feats[0, :T_0])
+        ctc_log_probs = F.log_softmax(ctc_logits.float(), dim=-1)
         spans, nodes = self.ctc_aligner.align_utterance(
-            frame_feats[0, :T_0], phoneme_tokens, T_0
+            frame_feats[0, :T_0], phoneme_tokens, T_0, log_probs=ctc_log_probs.unsqueeze(0)
         )
+        nodes = self._condition_nodes(nodes, ctc_log_probs, spans, phoneme_tokens)
 
         # Graph attention & MDD classification
         gat_nodes = self.phoneme_graph.forward_single(nodes, word_phone_ranges)
         mdd_logits = self.mdd_head(gat_nodes)
-        ctc_logits = self.ctc_aligner.ctc_proj(frame_feats[0, :T_0])
 
         return mdd_logits, ctc_logits, spans
 
@@ -250,8 +305,8 @@ class L2MDDModel(nn.Module):
                     blank_logit = span_ctc[0].item() if len(span_ctc) > 0 else -100.0
                     span_ctc[:3] = -1e9  # mask <pad>, <unk>, |
 
-                    target_id = self.ctc_aligner.token2id.get(target_phone)
-                    target_logit = span_ctc[target_id].item() if (target_id is not None and target_id < len(span_ctc)) else -100.0
+                    target_id = int(self.ctc_aligner.phonemes_to_ids([target_phone])[0].item())
+                    target_logit = span_ctc[target_id].item() if (0 <= target_id < len(span_ctc)) else -100.0
 
                     # 1. Acoustic Deletion Check: Dropped coda consonant in word-final position
                     if w_ctx.get("is_last", False) and not target_is_vowel:
@@ -319,8 +374,8 @@ class L2MDDModel(nn.Module):
                     actual_phone = "[ADDITION]"
                     pred_class_name = "addition"
                     is_suspicious = True
-                elif pred_class_id == ERR_SUB and p_sub >= max(0.45, thresh) and p_sub > p_correct and typs:
-                    actual_phone = typs[0]
+                elif pred_class_id == ERR_SUB and p_sub >= max(0.45, thresh) and p_sub > p_correct:
+                    actual_phone = typs[0] if typs else "[SUBSTITUTION]"
                     pred_class_name = "substitution"
                     is_suspicious = True
 

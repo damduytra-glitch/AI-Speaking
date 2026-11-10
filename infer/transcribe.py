@@ -1,4 +1,4 @@
-"""Speech-to-text for automatic transcript (Whisper)."""
+"""Speech-to-text for automatic transcript (Whisper Large-v3 Bilingual EN/VI)."""
 
 from __future__ import annotations
 
@@ -6,26 +6,101 @@ import os
 import re
 import threading
 from pathlib import Path
-from typing import Any, Dict, Optional, Union
+from typing import Any, Dict, Optional, Sequence, Tuple, Union
 
 import torch
+import torch.nn.functional as F
 import torchaudio
-from data.audio_preprocess import load_audio_file
 import yaml
 
+from data.audio_preprocess import load_audio_file
+from data.cmudict import expand_numbers_in_text
 from infer.device_utils import resolve_device
-from paths import PRONUNCIATION_CONFIG
+from paths import PRONUNCIATION_CONFIG, ROOT
 
 PathLike = Union[str, Path]
 WHISPER_SR = 16000
 WHISPER_CHUNK_SEC = 30.0
+WHISPER_DEFAULT_MODEL = "openai/whisper-large-v3"
+LOCAL_WHISPER_DIR = ROOT / "pretrained_models" / "whisper-large-v3"
+DEFAULT_ALLOWED_LANGUAGES = ("en", "vi")
+
+
+def _local_whisper_ready(local_dir: Path = LOCAL_WHISPER_DIR) -> bool:
+    if not local_dir.is_dir() or not (local_dir / "config.json").is_file():
+        return False
+    return any(
+        (local_dir / fname).is_file()
+        for fname in ("model.safetensors", "model.safetensors.index.json", "pytorch_model.bin")
+    )
+
+
+def _resolve_whisper_model_name(model_name: Optional[str]) -> str:
+    raw = (model_name or "").strip()
+    if not raw or raw == WHISPER_DEFAULT_MODEL:
+        if _local_whisper_ready(LOCAL_WHISPER_DIR):
+            return str(LOCAL_WHISPER_DIR)
+        return WHISPER_DEFAULT_MODEL
+
+    if os.path.exists(raw):
+        return raw
+
+    if raw.startswith("/") or raw.startswith("pretrained_models") or "\\" in raw or os.sep in raw:
+        if _local_whisper_ready(LOCAL_WHISPER_DIR):
+            return str(LOCAL_WHISPER_DIR)
+        return WHISPER_DEFAULT_MODEL
+
+    return raw
 
 _transcriber: Optional["WhisperTranscriber"] = None
 _transcriber_error: Optional[str] = None
 _lock = threading.Lock()
 
 
-def _normalize_transcript(text: str) -> str:
+def clean_whisper_hallucinations(text: str) -> str:
+    """Clean common Whisper hallucinations, YouTube tags, and loop repetitions."""
+    if not text:
+        return ""
+
+    # Remove bracketed/parenthesized annotations like [applause], (music), ***
+    cleaned = re.sub(r"\[.*?\]|\(.*?\)", " ", text).strip()
+    cleaned = re.sub(r"\*+", " ", cleaned).strip()
+
+    # Hallucination phrases (subtitles, youtube, silence triggers)
+    lower = cleaned.lower().strip(" .,!?")
+    hallucination_phrases = {
+        "thank you for watching", "thanks for watching", "please subscribe",
+        "subtitles by", "like and subscribe", "see you next time", "bye bye",
+        "thank you so much for watching", "watch next", "translated by",
+    }
+    for phrase in hallucination_phrases:
+        if lower == phrase:
+            return ""
+        if lower.startswith(phrase + " "):
+            cleaned = cleaned[len(phrase):].strip()
+        if lower.endswith(" " + phrase):
+            cleaned = cleaned[:-len(phrase)].strip()
+
+    # Collapse repetitive loops (e.g. "and then and then and then")
+    cleaned = re.sub(r"\b(\w+(?:\s+\w+){0,2})(?:\s+\1){2,}\b", r"\1", cleaned, flags=re.IGNORECASE)
+
+    return " ".join(cleaned.split())
+
+
+def _normalize_transcript(text: str, is_vietnamese: bool = False) -> str:
+    """Normalize transcript for display or pronunciation assessment."""
+    text = clean_whisper_hallucinations(text)
+    if not text:
+        return ""
+
+    if is_vietnamese:
+        # Preserve Vietnamese characters, accents, and case
+        text = re.sub(r"[^\w\s\u00C0-\u1EF9']", " ", text)
+        return " ".join(text.split())
+
+    # English: expand numbers, standardize apostrophes, uppercase
+    text = expand_numbers_in_text(text)
+    text = text.replace("’", "'").replace("‘", "'")
     text = re.sub(r"[^\w\s']", " ", text.upper())
     return " ".join(text.split())
 
@@ -49,114 +124,366 @@ def _parse_dtype(name: Optional[str], device: torch.device) -> torch.dtype:
 
 
 class WhisperTranscriber:
-    """Whisper ASR — default: whisper-small.en (English, CPU-friendly)."""
+    """
+    Bilingual Whisper ASR (EN/VI) — default: openai/whisper-large-v3 (128-mel).
+    Restricts language detection to allowed_languages (default: ('en', 'vi'))
+    and returns both acoustic probabilities and combined Vietnamese percentage.
+    """
 
     def __init__(
         self,
-        model_name: str = "openai/whisper-small.en",
-        language: str = "en",
+        model_name: str = WHISPER_DEFAULT_MODEL,
+        language: str = "auto",
         device: Optional[str] = None,
         load_progress: Optional[Any] = None,
         torch_dtype: Optional[str] = "float16",
-        max_new_tokens: int = 448,
+        max_new_tokens: int = 440,
+        asr_config: Optional[Dict[str, Any]] = None,
+        allowed_languages: Optional[Sequence[str]] = None,
     ):
         from transformers import WhisperForConditionalGeneration, WhisperProcessor
 
-        asr_cfg = _load_asr_config()
+        asr_cfg = asr_config if asr_config is not None else _load_asr_config()
         self.device = torch.device(
             device or resolve_device({"asr": asr_cfg}, asr_cfg.get("device"))
         )
-        self.language = language
-        if model_name and not os.path.exists(model_name) and (model_name.startswith("/") or "\\" in model_name):
-            model_name = "openai/whisper-small.en"
-        self.model_name = model_name
+        self.language = (language or asr_cfg.get("language", "auto")).strip().lower()
+
+        raw_allowed = allowed_languages or asr_cfg.get("allowed_languages") or DEFAULT_ALLOWED_LANGUAGES
+        norm_allowed = []
+        for code in raw_allowed:
+            c = str(code).strip().lower()
+            if c and c not in norm_allowed:
+                norm_allowed.append(c)
+        self.allowed_languages: Tuple[str, ...] = tuple(norm_allowed or DEFAULT_ALLOWED_LANGUAGES)
+
+        self.model_name = _resolve_whisper_model_name(model_name)
         self.max_new_tokens = max_new_tokens
         dtype = _parse_dtype(torch_dtype, self.device)
 
         if load_progress is not None:
-            load_progress.start("whisper_proc", model_name)
-        self.processor = WhisperProcessor.from_pretrained(model_name)
+            load_progress.start("whisper_proc", self.model_name)
+        self.processor = WhisperProcessor.from_pretrained(self.model_name)
         if load_progress is not None:
-            load_progress.finish("whisper_proc", model_name)
-            load_progress.start("whisper_model", model_name)
+            load_progress.finish("whisper_proc", self.model_name)
+            load_progress.start("whisper_model", self.model_name)
 
         load_kw: Dict[str, Any] = {}
         if self.device.type == "cuda" and dtype != torch.float32:
             load_kw["torch_dtype"] = dtype
+        try:
+            import accelerate  # noqa: F401
+            load_kw["low_cpu_mem_usage"] = True
+        except ImportError:
+            pass
 
-        self.model = WhisperForConditionalGeneration.from_pretrained(model_name, **load_kw)
+        self.model = WhisperForConditionalGeneration.from_pretrained(self.model_name, **load_kw)
         self.model.to(self.device)
         self.model.eval()
 
         if load_progress is not None:
-            load_progress.finish("whisper_model", model_name)
+            load_progress.finish("whisper_model", self.model_name)
 
-    def _generate(self, input_features: torch.Tensor) -> torch.Tensor:
+    def _get_allowed_lang_token_ids(self) -> Dict[str, int]:
+        gen_cfg = getattr(self.model, "generation_config", None)
+        lang_to_id = getattr(gen_cfg, "lang_to_id", None) or {}
+        tok = getattr(self.processor, "tokenizer", None)
+        unk_id = getattr(tok, "unk_token_id", None) if tok is not None else None
+        mapping: Dict[str, int] = {}
+        for code in self.allowed_languages:
+            tid = lang_to_id.get(f"<|{code}|>")
+            if tid is None:
+                tid = lang_to_id.get(code)
+            if tid is None and tok is not None and hasattr(tok, "convert_tokens_to_ids"):
+                cand = tok.convert_tokens_to_ids(f"<|{code}|>")
+                if isinstance(cand, int) and cand >= 0 and cand != unk_id:
+                    tid = cand
+            if isinstance(tid, int) and tid >= 0:
+                mapping[code] = int(tid)
+        return mapping
+
+    def detect_language_probs(self, input_features: torch.Tensor) -> Tuple[str, Dict[str, float]]:
+        """
+        Detect language restricted strictly to self.allowed_languages (default: EN vs VI)
+        and return (best_language, {lang_code: probability}).
+        """
+        allowed = self.allowed_languages or DEFAULT_ALLOWED_LANGUAGES
+        default_lang = allowed[0]
+
+        if str(self.model_name).lower().endswith(".en"):
+            return "en", {c: (1.0 if c == "en" else 0.0) for c in allowed}
+
+        tid_map = self._get_allowed_lang_token_ids()
+        codes = [c for c in allowed if c in tid_map]
+
+        if codes and callable(self.model):
+            try:
+                gen_cfg = getattr(self.model, "generation_config", None)
+                start_id = getattr(gen_cfg, "decoder_start_token_id", None)
+                if start_id is None:
+                    tok = getattr(self.processor, "tokenizer", None)
+                    if tok is not None and hasattr(tok, "convert_tokens_to_ids"):
+                        cand = tok.convert_tokens_to_ids("<|startoftranscript|>")
+                        if isinstance(cand, int) and cand >= 0:
+                            start_id = cand
+                if start_id is None:
+                    start_id = 50258
+
+                batch_size = int(input_features.shape[0])
+                dec_ids = torch.full(
+                    (batch_size, 1),
+                    int(start_id),
+                    device=input_features.device,
+                    dtype=torch.long,
+                )
+                with torch.no_grad():
+                    out = self.model(
+                        input_features=input_features[:, :, :3000],
+                        decoder_input_ids=dec_ids,
+                        use_cache=False,
+                    )
+                logits = getattr(out, "logits", None)
+                tids = [tid_map[c] for c in codes]
+                if logits is not None and int(logits.shape[-1]) > max(tids):
+                    step_logits = logits[:, -1, :].float()
+                    sub_logits = step_logits[:, tids]
+                    probs_tensor = F.softmax(sub_logits, dim=-1).mean(dim=0)
+                    probs = {c: float(probs_tensor[i].item()) for i, c in enumerate(codes)}
+                    for c in allowed:
+                        probs.setdefault(c, 0.0)
+                    best_lang = max(codes, key=lambda c: probs[c])
+                    return best_lang, probs
+            except Exception:
+                pass
+
+        try:
+            tokens = self.model.detect_language(input_features)
+            lang_str = self.processor.tokenizer.decode(tokens[0]).strip().strip("<|>").lower()
+            if lang_str not in allowed:
+                lang_str = default_lang
+            probs = {c: (1.0 if c == lang_str else 0.0) for c in allowed}
+            return lang_str, probs
+        except Exception:
+            probs = {c: (1.0 if c == default_lang else 0.0) for c in allowed}
+            return default_lang, probs
+
+    def detect_language(self, input_features: torch.Tensor) -> str:
+        """Detect language code restricted to self.allowed_languages ('en' or 'vi')."""
+        lang, _ = self.detect_language_probs(input_features)
+        return lang
+
+    def _generate_with_lang(
+        self,
+        input_features: torch.Tensor,
+        forced_lang: Optional[str] = None,
+    ) -> Tuple[str, str]:
+        """Generate transcription and return (raw_text, detected_language)."""
         name = self.model_name.lower()
         max_pos = getattr(getattr(self.model, "config", None), "max_target_positions", 448)
-        max_tokens = min(getattr(self, "max_new_tokens", 440), max_pos - 8)
+        max_tokens = max(1, min(getattr(self, "max_new_tokens", 440), max_pos - 12))
 
+        # English-only checkpoints have no language tokens
         if name.endswith(".en"):
-            # English-only checkpoints: no language/task prefix tokens
-            return self.model.generate(input_features, max_new_tokens=max_tokens)
+            ids = self.model.generate(input_features, max_new_tokens=max_tokens)
+            text = self.processor.batch_decode(ids, skip_special_tokens=True)[0]
+            return text, "en"
 
-        if "large-v3" in name or "large-v2" in name:
-            return self.model.generate(
+        # Determine target language
+        target_lang = forced_lang
+        if not target_lang:
+            if self.language in ("auto", "", "none"):
+                target_lang = self.detect_language(input_features)
+            else:
+                target_lang = self.language
+
+        # Decode with native language/task args first (required for whisper-large-v3 on transformers >= 4.41/5.x)
+        try:
+            ids = self.model.generate(
                 input_features,
                 max_new_tokens=max_tokens,
-                language=self.language,
+                language=target_lang,
                 task="transcribe",
             )
+        except Exception:
+            # Legacy fallback with explicit forced_decoder_ids for older transformers
+            decoder_ids = self.processor.get_decoder_prompt_ids(
+                language=target_lang,
+                task="transcribe",
+            )
+            ids = self.model.generate(
+                input_features,
+                max_new_tokens=max_tokens,
+                forced_decoder_ids=decoder_ids,
+            )
 
-        # Multilingual (medium/small/tiny): forced_decoder_ids uses ~4 prefix tokens
-        max_tokens = min(max_tokens, max_pos - 12)
-        return self.model.generate(
-            input_features,
-            max_new_tokens=max_tokens,
-            forced_decoder_ids=self.processor.get_decoder_prompt_ids(
-                language=self.language, task="transcribe"
-            ),
-        )
+        text = self.processor.batch_decode(ids, skip_special_tokens=True)[0]
+        return text, target_lang
 
-    def _transcribe_waveform(self, wav: torch.Tensor) -> str:
+    def _transcribe_waveform_with_meta(
+        self,
+        wav: torch.Tensor,
+        *,
+        language_override: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Process waveform tensor and return text and language metadata."""
+        from infer.lang_id import compute_vietnamese_percent, text_looks_vietnamese
+
+        target_mode = (language_override or self.language or "auto").strip().lower()
         inputs = self.processor(wav.numpy(), sampling_rate=WHISPER_SR, return_tensors="pt")
-        input_features = inputs.input_features.to(self.device)
-        if self.device.type == "cuda" and input_features.dtype == torch.float32:
-            input_features = input_features.half()
-        ids = self._generate(input_features)
-        return self.processor.batch_decode(ids, skip_special_tokens=True)[0]
+        model_dtype = getattr(self.model, "dtype", None)
+        if model_dtype is not None:
+            input_features = inputs.input_features.to(device=self.device, dtype=model_dtype)
+        else:
+            input_features = inputs.input_features.to(self.device)
+            if self.device.type == "cuda" and input_features.dtype == torch.float32:
+                input_features = input_features.half()
+
+        # Pure forced-language mode (e.g., conversation/practice 'en'): skip language-ID forward pass
+        if target_mode not in ("auto", "", "none"):
+            raw_text, used_lang = self._generate_with_lang(input_features, forced_lang=target_mode)
+            is_vi = used_lang in ("vi", "vie", "vietnamese")
+            normalized_text = _normalize_transcript(raw_text, is_vietnamese=is_vi)
+            return {
+                "text": normalized_text,
+                "raw_text": raw_text.strip(),
+                "language": used_lang,
+                "is_vietnamese": is_vi,
+            }
+
+        # Bilingual EN/VI auto mode (used by classroom language analysis)
+        detected_lang, lang_probs = self.detect_language_probs(input_features)
+        raw_text, used_lang = self._generate_with_lang(input_features, forced_lang=detected_lang)
+
+        vi_prob = float(lang_probs.get("vi", 1.0 if used_lang == "vi" else 0.0))
+        vi_stats = compute_vietnamese_percent(vi_prob, raw_text, detected_lang=used_lang)
+
+        is_vi = (
+            (used_lang in ("vi", "vie", "vietnamese"))
+            or text_looks_vietnamese(raw_text)
+            or (vi_stats["vi_percent"] >= 50.0)
+        )
+        final_lang = "vi" if is_vi else ("en" if used_lang not in ("vi", "vie", "vietnamese") else used_lang)
+
+        normalized_text = _normalize_transcript(raw_text, is_vietnamese=is_vi)
+        return {
+            "text": normalized_text,
+            "raw_text": raw_text.strip(),
+            "language": final_lang,
+            "is_vietnamese": is_vi,
+            **vi_stats,
+        }
+
+    @torch.inference_mode()
+    def transcribe_waveform(
+        self,
+        wav: Union[torch.Tensor, Any],
+        sample_rate: int = WHISPER_SR,
+        *,
+        language: Optional[str] = None,
+        skip_vad_check: bool = False,
+    ) -> Dict[str, Any]:
+        """Transcribe an in-memory 1D mono waveform without temporary file I/O."""
+        from infer.lang_id import compute_vietnamese_percent
+
+        if not isinstance(wav, torch.Tensor):
+            wav = torch.as_tensor(wav, dtype=torch.float32)
+        else:
+            wav = wav.detach().cpu().float()
+        if wav.dim() > 1:
+            wav = wav.mean(0)
+        if sample_rate != WHISPER_SR and wav.numel() > 0:
+            wav = torchaudio.functional.resample(wav, sample_rate, WHISPER_SR)
+
+        if wav.numel() == 0:
+            raise ValueError("File audio rỗng")
+        if not skip_vad_check:
+            peak_amp = float(wav.abs().max())
+            rms = float(torch.sqrt(torch.mean(wav ** 2)))
+            if peak_amp < 0.015 or rms < 0.003:
+                raise ValueError(f"Không phát hiện tiếng người trong audio (VAD: peak={peak_amp:.4f}, rms={rms:.4f})")
+
+        duration_sec = float(wav.shape[0]) / float(WHISPER_SR)
+        chunk_samples = int(WHISPER_CHUNK_SEC * WHISPER_SR)
+        target_mode = (language or self.language or "auto").strip().lower()
+
+        if wav.shape[0] <= chunk_samples:
+            res = self._transcribe_waveform_with_meta(wav, language_override=language)
+            res["duration_sec"] = duration_sec
+            return res
+
+        parts_text = []
+        parts_raw = []
+        detected_languages = []
+        is_vi_flags = []
+        chunk_weights = []
+        chunk_vi_probs = []
+
+        for start in range(0, wav.shape[0], chunk_samples):
+            chunk = wav[start : start + chunk_samples]
+            chunk_res = self._transcribe_waveform_with_meta(chunk, language_override=language)
+            if chunk_res["text"] or chunk_res["raw_text"]:
+                parts_text.append(chunk_res["text"])
+                parts_raw.append(chunk_res["raw_text"])
+                detected_languages.append(chunk_res["language"])
+                is_vi_flags.append(chunk_res["is_vietnamese"])
+                w_sec = max(0.1, float(chunk.shape[0]) / float(WHISPER_SR))
+                chunk_weights.append(w_sec)
+                if "acoustic_vi_percent" in chunk_res or "language_probs" in chunk_res:
+                    c_vi_prob = float((chunk_res.get("language_probs") or {}).get("vi", chunk_res.get("acoustic_vi_percent", 0.0) / 100.0))
+                    chunk_vi_probs.append(c_vi_prob)
+
+        combined_text = " ".join(p for p in parts_text if p)
+        combined_raw = " ".join(p for p in parts_raw if p)
+
+        if target_mode not in ("auto", "", "none"):
+            is_any_vi = any(is_vi_flags)
+            return {
+                "text": combined_text,
+                "raw_text": combined_raw,
+                "language": target_mode,
+                "is_vietnamese": is_any_vi,
+                "duration_sec": duration_sec,
+            }
+
+        total_w = sum(chunk_weights) or 1.0
+        avg_vi_prob = sum(p * w for p, w in zip(chunk_vi_probs, chunk_weights)) / total_w if chunk_vi_probs else 0.0
+        overall_lang = "vi" if (any(is_vi_flags) or avg_vi_prob >= 0.5) else (detected_languages[0] if detected_languages else "en")
+        vi_stats = compute_vietnamese_percent(avg_vi_prob, combined_raw or combined_text, detected_lang=overall_lang)
+        is_any_vi = any(is_vi_flags) or (vi_stats["vi_percent"] >= 50.0)
+
+        return {
+            "text": combined_text,
+            "raw_text": combined_raw,
+            "language": "vi" if is_any_vi else "en",
+            "is_vietnamese": is_any_vi,
+            "duration_sec": duration_sec,
+            **vi_stats,
+        }
+
+    @torch.inference_mode()
+    def transcribe_with_meta(
+        self,
+        audio_path: PathLike,
+        *,
+        language: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Transcribe audio file and return metadata including detected language."""
+        wav, sr = load_audio_file(audio_path)
+        wav = wav.mean(0)
+        return self.transcribe_waveform(wav, sample_rate=sr, language=language)
 
     @torch.inference_mode()
     def transcribe(self, audio_path: PathLike) -> str:
-        wav, sr = load_audio_file(audio_path)
-        wav = wav.mean(0)
-        if sr != WHISPER_SR:
-            wav = torchaudio.functional.resample(wav, sr, WHISPER_SR)
-
-        # Voice Activity Detection (VAD) check trước khi đưa vào Whisper: lọc silence / noise nền
-        if wav.numel() == 0:
-            raise ValueError("File audio rỗng")
-        peak_amp = float(wav.abs().max())
-        rms = float(torch.sqrt(torch.mean(wav ** 2)))
-        if peak_amp < 0.015 or rms < 0.003:
-            raise ValueError(f"Không phát hiện tiếng người trong audio (VAD: peak={peak_amp:.4f}, rms={rms:.4f})")
-
-        chunk_samples = int(WHISPER_CHUNK_SEC * WHISPER_SR)
-        if wav.shape[0] <= chunk_samples:
-            text = self._transcribe_waveform(wav)
-        else:
-            parts = []
-            for start in range(0, wav.shape[0], chunk_samples):
-                parts.append(self._transcribe_waveform(wav[start : start + chunk_samples]))
-            text = " ".join(parts)
-
-        normalized = _normalize_transcript(text)
-        if not normalized:
-            raise ValueError("Không nhận diện được lời nói trong audio")
-        return normalized
+        """Transcribe audio file and return normalized text string."""
+        meta = self.transcribe_with_meta(audio_path)
+        return meta["text"]
 
 
-def get_transcriber(load_progress: Optional[Any] = None, device: Optional[str] = None) -> WhisperTranscriber:
+def get_transcriber(
+    load_progress: Optional[Any] = None,
+    device: Optional[str] = None,
+    asr_config: Optional[Dict[str, Any]] = None,
+) -> WhisperTranscriber:
     global _transcriber, _transcriber_error
     if _transcriber is not None:
         return _transcriber
@@ -168,15 +495,17 @@ def get_transcriber(load_progress: Optional[Any] = None, device: Optional[str] =
         if _transcriber_error:
             raise RuntimeError(_transcriber_error)
         try:
-            asr = _load_asr_config()
+            asr = asr_config if asr_config is not None else _load_asr_config()
             target_device = device or asr.get("device")
             _transcriber = WhisperTranscriber(
-                model_name=asr.get("model_name", "openai/whisper-small.en"),
-                language=asr.get("language", "en"),
+                model_name=asr.get("model_name", WHISPER_DEFAULT_MODEL),
+                language=asr.get("language", "auto"),
                 device=target_device,
                 load_progress=load_progress,
                 torch_dtype=asr.get("torch_dtype", "float16"),
-                max_new_tokens=int(asr.get("max_new_tokens", 448)),
+                max_new_tokens=int(asr.get("max_new_tokens", 440)),
+                asr_config=asr,
+                allowed_languages=asr.get("allowed_languages"),
             )
         except Exception as exc:
             _transcriber_error = str(exc)
@@ -186,5 +515,19 @@ def get_transcriber(load_progress: Optional[Any] = None, device: Optional[str] =
         return _transcriber
 
 
-def transcribe_audio(audio_path: PathLike) -> str:
-    return get_transcriber().transcribe(audio_path)
+def transcribe_audio(
+    audio_path: PathLike,
+    *,
+    asr_config: Optional[Dict[str, Any]] = None,
+) -> str:
+    """Convenience helper returning normalized transcript string."""
+    return get_transcriber(asr_config=asr_config).transcribe(audio_path)
+
+
+def transcribe_audio_with_meta(
+    audio_path: PathLike,
+    *,
+    asr_config: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """Convenience helper returning transcript with language and detection metadata."""
+    return get_transcriber(asr_config=asr_config).transcribe_with_meta(audio_path)

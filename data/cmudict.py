@@ -14,6 +14,18 @@ from typing import Dict, List, Optional
 # ARPAbet phoneme pattern (e.g. AH0, T, SH)
 PHONE_RE = re.compile(r"^[A-Z]{1,2}\d?$")
 
+
+def _ascii_fold_for_g2p(word: str) -> str:
+    """Fold Unicode diacritics (including Vietnamese 'đ/Đ' and tones) to ASCII for CMU/G2P lookup."""
+    if not word:
+        return ""
+    import unicodedata
+
+    folded = word.replace("đ", "d").replace("Đ", "D")
+    folded = unicodedata.normalize("NFKD", folded)
+    folded = "".join(ch for ch in folded if not unicodedata.combining(ch))
+    return re.sub(r"[^A-Za-z']", "", folded).strip()
+
 NUMBER_MAP = {
     0: "zero", 1: "one", 2: "two", 3: "three", 4: "four", 5: "five",
     6: "six", 7: "seven", 8: "eight", 9: "nine", 10: "ten",
@@ -66,38 +78,61 @@ CUSTOM_WORDS: Dict[str, List[str]] = {
 }
 
 
-def int_to_en(n: int) -> str:
+def int_to_en(n: int, *, year_style: bool = False) -> str:
     """Convert integer to English words."""
     if n < 0:
-        return "minus " + int_to_en(-n)
+        return "minus " + int_to_en(-n, year_style=year_style)
     if n <= 20:
         return NUMBER_MAP.get(n, str(n))
     if n < 100:
         tens, rem = divmod(n, 10)
         return NUMBER_MAP.get(tens * 10, "") + ((" " + NUMBER_MAP[rem]) if rem else "")
+    if year_style and 1000 <= n <= 2099 and n % 100 != 0:
+        return f"{int_to_en(n // 100)} {int_to_en(n % 100)}"
     if n < 1000:
         hundreds, rem = divmod(n, 100)
         return NUMBER_MAP.get(hundreds, "") + " hundred" + ((" " + int_to_en(rem)) if rem else "")
-    if n < 1000000:
+    if n < 1_000_000:
         thousands, rem = divmod(n, 1000)
         return int_to_en(thousands) + " thousand" + ((" " + int_to_en(rem)) if rem else "")
+    if n < 1_000_000_000:
+        millions, rem = divmod(n, 1_000_000)
+        return int_to_en(millions) + " million" + ((" " + int_to_en(rem)) if rem else "")
     return str(n)
 
 
-def normalize_text_for_phonemes(text: str) -> str:
-    """Normalize text: convert digits to words, normalize apostrophes, expand abbreviations."""
+def expand_numbers_in_text(text: str) -> str:
+    """Expand digits ($50, 50%, 3.5, 42, years) into English words for ASR/CTC alignment."""
     if not text:
         return ""
-    # Normalize curly apostrophes and quotation marks to ASCII single quote
+
+    def repl_cur(m: re.Match[str]) -> str:
+        val = int(m.group(1))
+        unit = "dollar" if val == 1 else "dollars"
+        return f"{int_to_en(val)} {unit}"
+
+    text = re.sub(r"\$\s*(\d+)", repl_cur, text)
+    text = re.sub(r"(\d+)\s*%", lambda m: f"{int_to_en(int(m.group(1)))} percent", text)
+
+    def repl_dec(m: re.Match[str]) -> str:
+        int_p = int_to_en(int(m.group(1)))
+        dec_p = " ".join(int_to_en(int(d)) for d in m.group(2))
+        return f"{int_p} point {dec_p}"
+
+    text = re.sub(r"\b(\d+)\.(\d+)\b", repl_dec, text)
+    text = re.sub(r"\b(\d+)\b", lambda m: int_to_en(int(m.group(1)), year_style=True), text)
+    return text
+
+
+def normalize_text_for_phonemes(text: str) -> str:
+    """Normalize text: convert digits/times/ordinals to words and normalize punctuation."""
+    if not text:
+        return ""
     text = re.sub(r"[’‘`´]", "'", text)
-    # Remove Whisper annotations like [music], (applause)
     text = re.sub(r"\[.*?\]|\(.*?\)", " ", text)
-    # Currency ($50 -> fifty dollars)
-    text = re.sub(r"\$\s*(\d+)", lambda m: int_to_en(int(m.group(1))) + " dollars ", text)
-    # Percentage (50% -> fifty percent)
-    text = re.sub(r"(\d+)\s*%", lambda m: int_to_en(int(m.group(1))) + " percent ", text)
-    # Time (7:30 -> seven thirty)
-    def _repl_time(m):
+
+    # Time (7:30 -> seven thirty) before general number expansion
+    def _repl_time(m: re.Match[str]) -> str:
         h, mn = int(m.group(1)), int(m.group(2))
         h_str = int_to_en(h)
         if mn == 0:
@@ -105,6 +140,7 @@ def normalize_text_for_phonemes(text: str) -> str:
         if mn < 10:
             return h_str + " oh " + int_to_en(mn) + " "
         return h_str + " " + int_to_en(mn) + " "
+
     text = re.sub(r"\b(\d{1,2}):(\d{2})\b", _repl_time, text)
     # Ordinals (1st -> first, 2nd -> second)
     text = re.sub(
@@ -113,11 +149,8 @@ def normalize_text_for_phonemes(text: str) -> str:
         text,
         flags=re.I,
     )
-    # Standalone numbers (1, 2, 3... -> one, two, three...)
-    text = re.sub(r"\b\d+\b", lambda m: int_to_en(int(m.group(0))), text)
-    # Hyphens to spaces (twenty-one -> twenty one, ice-cream -> ice cream)
-    text = text.replace("-", " ")
-    return text
+    text = expand_numbers_in_text(text)
+    return text.replace("-", " ")
 
 
 def fallback_g2p(word: str) -> List[str]:
@@ -259,7 +292,7 @@ class CMUDict:
 
     def lookup_or_fallback(self, word: str) -> List[str]:
         """Return pronunciation from lexicon, custom words, or fallback G2P (never None)."""
-        clean = re.sub(r"[^A-Za-z']", "", word).strip()
+        clean = _ascii_fold_for_g2p(word)
         if not clean:
             return ["AH0"]
         pron = self.lookup(clean)
@@ -272,7 +305,7 @@ class CMUDict:
         norm_text = normalize_text_for_phonemes(text)
         phones: List[str] = []
         for word in norm_text.split():
-            clean = re.sub(r"[^A-Za-z']", "", word).strip()
+            clean = _ascii_fold_for_g2p(word)
             if not clean:
                 continue
             phones.extend(self.lookup_or_fallback(clean))
@@ -286,7 +319,7 @@ class CMUDict:
         norm_text = normalize_text_for_phonemes(text)
         groups = []
         for raw_word in norm_text.split():
-            clean = re.sub(r"[^A-Za-z']", "", raw_word).strip()
+            clean = _ascii_fold_for_g2p(raw_word)
             if not clean:
                 continue
             phones = self.lookup_or_fallback(clean)

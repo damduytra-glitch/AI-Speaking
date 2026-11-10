@@ -17,12 +17,114 @@ from data.silence_split import SilenceSplitConfig, export_diarization_clips, spl
 from infer.lang_id import is_vietnamese_segment
 
 from infer.pronunciation import Predictor, L2MDDPredictor
-from infer.transcribe import transcribe_audio
+from infer.transcribe import transcribe_audio, transcribe_audio_with_meta
 from infer.device_utils import resolve_device
 from models.pronunciation_scorer import PronunciationScorer
 from paths import SPEAKER_DIARIZE_DIR, PRONUNCIATION_CONFIG, ROOT
 
 SCORE_KEYS = ("accuracy", "fluency", "prosodic", "total")
+
+DEFAULT_BACKCHANNELS = frozenset({
+    "yes", "no", "yeah", "yep", "ok", "okay", "sure", "uh", "um", "ah", "hmm",
+    "right", "alright", "oh", "cool", "thank you", "thanks", "bye", "bye bye",
+    "hello", "hi", "goodbye", "fine", "yup",
+})
+
+
+def check_scoring_eligibility(
+    transcript: str,
+    duration_sec: float,
+    config: Optional[Dict[str, Any]] = None,
+) -> Tuple[bool, str]:
+    """
+    Check if utterance has sufficient phonological content to be scored.
+    Returns (is_eligible, reason).
+    """
+    if not transcript or not transcript.strip():
+        return False, "empty_transcript"
+
+    cfg = config or {}
+    min_duration = float(cfg.get("min_duration_sec", 1.0))
+    min_words = int(cfg.get("min_words", 2))
+    raw_backchannels = cfg.get("backchannel_words")
+    if raw_backchannels:
+        backchannels = frozenset(w.lower().strip() for w in raw_backchannels)
+    else:
+        backchannels = DEFAULT_BACKCHANNELS
+
+    clean_words = [
+        w.lower().strip() for w in re.sub(r"[^\w\s']", " ", transcript).split() if w.strip()
+    ]
+    if not clean_words:
+        return False, "no_content_words"
+
+    # 1. Utterance matches a multi-word backchannel phrase (e.g. "thank you", "bye bye")
+    norm_phrase = " ".join(clean_words)
+    if norm_phrase in backchannels:
+        return False, "short_backchannel"
+
+    # Or each individual word is a backchannel/filler token (e.g. "oh yeah", "yes ok")
+    if all(w in backchannels for w in clean_words):
+        return False, "short_backchannel"
+
+    # 2. Utterance is too short in duration and has too few content words
+    if duration_sec > 0 and duration_sec < min_duration and len(clean_words) < min_words:
+        return False, "too_short"
+
+    return True, "eligible"
+
+
+def _serialize_dialogue_turn(s: Dict[str, Any], role: Optional[str] = None) -> Dict[str, Any]:
+    """Serialize a sentence record into a unified dialogue turn object."""
+    resolved_role = role or s.get("role") or "student"
+    return {
+        "role": resolved_role,
+        "scored": bool(s.get("scored") and s.get("scores")),
+        "is_vietnamese": s.get("is_vietnamese", False),
+        "language": s.get("language", "en"),
+        "eligibility_reason": s.get("eligibility_reason"),
+        "start_sec": s.get("start_sec"),
+        "end_sec": s.get("end_sec"),
+        "transcript": s.get("transcript", ""),
+        "audio": s.get("audio"),
+        "scores": s.get("scores"),
+        "errors": s.get("errors"),
+        "transformer_feedback": s.get("transformer_feedback"),
+        "words_detail": s.get("words_detail"),
+        "l2_mdd_feedback": s.get("l2_mdd_feedback"),
+    }
+
+
+def _make_unscored_turn(
+    seg: Dict[str, Any],
+    transcript: str,
+    *,
+    role: str,
+    is_vietnamese: bool = False,
+    language: str = "en",
+    eligibility_reason: str = "unscored",
+    transformer_feedback: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """Build a standardized unscored turn record preserving transcript and timing."""
+    words_neutral = [{"word": w, "status": "neutral"} for w in transcript.split() if w.strip()]
+    return {
+        "index": seg["index"],
+        "start_sec": seg["start_sec"],
+        "end_sec": seg["end_sec"],
+        "duration_sec": seg.get("duration_sec", 0.0),
+        "audio": seg["path"],
+        "turn_index": seg["index"],
+        "transcript": transcript,
+        "role": role,
+        "scored": False,
+        "is_vietnamese": is_vietnamese,
+        "language": language,
+        "eligibility_reason": eligibility_reason,
+        "scores": None,
+        "errors": {"phonemes": [], "words": []},
+        "words_detail": words_neutral,
+        "transformer_feedback": transformer_feedback or {},
+    }
 
 
 def _build_dialogue(
@@ -30,35 +132,10 @@ def _build_dialogue(
     student_sentences: List[Dict[str, Any]],
 ) -> Dict[str, Any]:
     """Chronological turns with teacher prompt attached before each student answer."""
-    turns: List[Dict[str, Any]] = []
-    for s in teacher_sentences:
-        turns.append({
-            "role": "teacher",
-            "scored": bool(s.get("scored") and s.get("scores")),
-            "start_sec": s.get("start_sec"),
-            "end_sec": s.get("end_sec"),
-            "transcript": s.get("transcript", ""),
-            "audio": s.get("audio"),
-            "scores": s.get("scores"),
-            "errors": s.get("errors"),
-            "transformer_feedback": s.get("transformer_feedback"),
-            "words_detail": s.get("words_detail"),
-            "l2_mdd_feedback": s.get("l2_mdd_feedback"),
-        })
-    for s in student_sentences:
-        turns.append({
-            "role": "student",
-            "scored": True,
-            "start_sec": s.get("start_sec"),
-            "end_sec": s.get("end_sec"),
-            "transcript": s.get("transcript", ""),
-            "audio": s.get("audio"),
-            "scores": s.get("scores"),
-            "errors": s.get("errors"),
-            "transformer_feedback": s.get("transformer_feedback"),
-            "words_detail": s.get("words_detail"),
-            "l2_mdd_feedback": s.get("l2_mdd_feedback"),
-        })
+    turns: List[Dict[str, Any]] = (
+        [_serialize_dialogue_turn(s, role="teacher") for s in teacher_sentences]
+        + [_serialize_dialogue_turn(s, role="student") for s in student_sentences]
+    )
     turns.sort(key=lambda t: (t.get("start_sec") or 0, 0 if t["role"] == "teacher" else 1))
 
     student_turns: List[Dict[str, Any]] = []
@@ -80,8 +157,9 @@ def _build_dialogue(
 
 def _avg_scores(items: List[Dict[str, Any]]) -> Dict[str, float]:
     out: Dict[str, float] = {}
+    scored_items = [x for x in items if x.get("scored") is True and x.get("scores")]
     for key in SCORE_KEYS:
-        vals = [x["scores"][key] for x in items if x.get("scores", {}).get(key) is not None]
+        vals = [x["scores"][key] for x in scored_items if x["scores"].get(key) is not None]
         if vals:
             out[key] = round(sum(vals) / len(vals), 2)
     return out
@@ -90,48 +168,32 @@ def _avg_scores(items: List[Dict[str, Any]]) -> Dict[str, float]:
 def _build_summary(
     sentences: List[Dict[str, Any]],
     *,
-    pipeline: "SpeakingPipeline",
-    feedback: bool,
-    lang: Optional[str],
-    speaker: Optional[str] = None,
     filtered_vi: int = 0,
-    exchanges: Optional[List[Dict[str, Any]]] = None,
+    **_ignored: Any,
 ) -> Dict[str, Any]:
     summary_scores = _avg_scores(sentences)
     # Mỗi lượt nói (turn) = một dòng — không ghép liền
     lines = [s["transcript"].strip() for s in sentences if s.get("transcript", "").strip()]
     full_transcript = "\n".join(lines)
-    summary_feedback = None
-    summary_source = None
-    pronunciation_feedback = None
-    pronunciation_source = None
 
-    if sentences:
-        pronunciation_source = "local"
-
-    if feedback and sentences:
-        speaker_label = {
-            "A": "Speaker A",
-            "B": "Speaker B",
-            "Student": "Student",
-            "Teacher": "Teacher",
-        }.get(speaker or "", None)
-        if speaker_label is None and speaker:
-            speaker_label = f"Speaker {speaker}"
-        summary_feedback = ""
-        summary_source = ""
+    scored_count = sum(1 for s in sentences if s.get("scored") is True)
+    vi_count = sum(1 for s in sentences if s.get("is_vietnamese") is True or s.get("language") == "vi")
+    unscored_count = len(sentences) - scored_count
 
     return {
         "sentence_count": len(sentences),
+        "scored_sentence_count": scored_count,
+        "unscored_sentence_count": unscored_count,
+        "vietnamese_sentence_count": vi_count,
         "transcript": full_transcript,
         "transcript_lines": lines,
         "transcript_source": "whisper",
-        "filtered_vi_count": filtered_vi,
+        "filtered_vi_count": filtered_vi or vi_count,
         "scores": summary_scores,
-        "pronunciation_feedback": pronunciation_feedback,
-        "pronunciation_feedback_source": pronunciation_source,
-        "feedback": summary_feedback,
-        "feedback_source": summary_source,
+        "pronunciation_feedback": None,
+        "pronunciation_feedback_source": "local" if sentences else None,
+        "feedback": None,
+        "feedback_source": None,
     }
 
 
@@ -231,11 +293,12 @@ class SpeakingPipeline:
         
         # ── Load Whisper Transcriber on self.asr_device (cuda:0) ──
         from infer.transcribe import get_transcriber
-        get_transcriber(load_progress, device=self.asr_device)
-        
+        self._asr_cfg = asr_cfg
+        get_transcriber(load_progress, device=self.asr_device, asr_config=self._asr_cfg)
+
         self.enable_feedback = enable_feedback
         self.feedback_mode = "local"
-        self._lang_id_cfg = (self.config.get("asr") or {}).get("lang_id") or {}
+        self._lang_id_cfg = self._asr_cfg.get("lang_id") or {}
 
     def _diarize_two_speakers(
         self,
@@ -290,6 +353,39 @@ class SpeakingPipeline:
         )
         return segments
 
+    @staticmethod
+    def calibrate_scores_with_phonemes(
+        pron_scores: Dict[str, Any],
+        words_detail: List[Dict[str, Any]],
+    ) -> Dict[str, Any]:
+        """Calibrate Accuracy and Total downward when L2-MDD detects critical/warning phoneme errors."""
+        calibrated = dict(pron_scores)
+        if not words_detail:
+            return calibrated
+
+        num_crit = 0
+        num_warn = 0
+        for w in words_detail:
+            for ph in w.get("phonemes") or w.get("phones") or []:
+                st = ph.get("status")
+                if st == "bad":
+                    num_crit += 1
+                elif st == "warning":
+                    num_warn += 1
+
+        if num_crit > 0 or num_warn > 0:
+            # Mỗi âm vị phát âm sai nghiêm trọng trừ 0.55; cảnh báo trừ 0.20 (tối đa trừ 4.0 điểm)
+            pen = min(4.0, num_crit * 0.55 + num_warn * 0.20)
+            base_acc = float(pron_scores.get("accuracy", 7.0))
+            calibrated_acc = max(1.5, round(base_acc - pen, 2))
+            calibrated["accuracy"] = calibrated_acc
+
+            flu = float(pron_scores.get("fluency", 7.0))
+            pro = float(pron_scores.get("prosodic", 7.0))
+            calibrated["total"] = max(1.5, round(0.50 * calibrated_acc + 0.30 * flu + 0.20 * pro, 2))
+
+        return calibrated
+
     def _process_segment(
         self,
         seg: Dict[str, Any],
@@ -303,47 +399,70 @@ class SpeakingPipeline:
         if not use_asr:
             return None, False
         try:
-            transcript = transcribe_audio(seg["path"])
+            meta = transcribe_audio_with_meta(seg["path"], asr_config=self._asr_cfg)
+            clean_tr = meta.get("text", "").strip()
+            raw_tr = meta.get("raw_text", "").strip()
+            detected_lang = meta.get("language", "en")
+            is_vi_from_asr = bool(meta.get("is_vietnamese", False))
         except ValueError:
             return None, False
-        if not transcript.strip():
+        if not clean_tr and not raw_tr:
             return None, False
 
-        # Clean Whisper hallucinations & bracketed sound annotations
-        clean_tr = re.sub(r"\[.*?\]|\(.*?\)", "", transcript).strip()
-        lower_tr = clean_tr.lower().strip(" .,!?")
-        hallucination_phrases = {
-            "thank you for watching", "thanks for watching", "please subscribe",
-            "subtitles by", "like and subscribe", "see you next time", "bye bye",
-        }
-        if not clean_tr or lower_tr in hallucination_phrases:
-            return None, False
+        display_tr = raw_tr if is_vi_from_asr else clean_tr
 
-        drop_vi = False
-        if score and self._lang_id_cfg.get("enabled", False):
-            drop_vi, reason = is_vietnamese_segment(
-                seg["path"],
-                clean_tr,
-                device=self.asr_device,
-                cfg=self._lang_id_cfg,
-            )
-            if drop_vi:
-                print(f"[lang_id] Bỏ đoạn tiếng Việt ({reason}): {clean_tr[:60]}…", flush=True)
-                return None, True
+        # ── Optional Vietnamese Guard (disabled by default in pure English mode) ──
+        if self._lang_id_cfg.get("enabled", False):
+            is_vi = is_vi_from_asr
+            reason_vi = f"whisper:{detected_lang}" if is_vi_from_asr else "text"
+            if not is_vi:
+                is_vi, reason_vi = is_vietnamese_segment(
+                    seg["path"],
+                    raw_tr or clean_tr,
+                    device=self.asr_device,
+                    cfg=self._lang_id_cfg,
+                    whisper_lang=detected_lang,
+                )
+            if is_vi:
+                print(f"[lang_id] Phát hiện tiếng Việt ({reason_vi}): '{display_tr[:60]}...'. Bảo toàn turn với scored=False.")
+                return _make_unscored_turn(
+                    seg,
+                    display_tr,
+                    role=role,
+                    is_vietnamese=True,
+                    language="vi",
+                    eligibility_reason="vietnamese_speech",
+                    transformer_feedback={
+                        "pedagogical_note": "Lượt nói bằng tiếng Việt (không tính vào điểm phát âm tiếng Anh)."
+                    },
+                ), True
 
+        # ── Check Role Unscored (e.g. Teacher when score_teacher is False) ──
         if not score:
-            return {
-                "index": seg["index"],
-                "start_sec": seg["start_sec"],
-                "end_sec": seg["end_sec"],
-                "duration_sec": seg["duration_sec"],
-                "audio": seg["path"],
-                "turn_index": seg["index"],
-                "transcript": clean_tr,
-                "role": role,
-                "scored": False,
-            }, False
+            return _make_unscored_turn(
+                seg,
+                clean_tr,
+                role=role,
+                eligibility_reason="role_unscored",
+            ), False
 
+        # ── Check Scoring Eligibility (Filter short backchannel / filler turns) ──
+        elig_cfg = self.config.get("eligibility") or {}
+        is_eligible, elig_reason = check_scoring_eligibility(
+            clean_tr,
+            seg.get("duration_sec", 0.0),
+            config=elig_cfg,
+        )
+        if not is_eligible:
+            print(f"[{role}] Lượt nói không đủ điều kiện chấm ({elig_reason}): '{clean_tr}'. Bảo toàn turn với scored=False.")
+            return _make_unscored_turn(
+                seg,
+                clean_tr,
+                role=role,
+                eligibility_reason=elig_reason,
+            ), False
+
+        # ── Run Phoneme & Pronunciation Models (SpeechOcean762 + L2-MDD) ──
         try:
             track = self.assess_track(
                 seg["path"], clean_tr, feedback=False, lang=lang,
@@ -351,22 +470,12 @@ class SpeakingPipeline:
             )
         except Exception as assess_err:
             print(f"[{role}] assess_track notice for turn {seg['index']} ('{clean_tr[:40]}'): {assess_err}. Bảo toàn turn với scored=False.")
-            words_fallback = [{"word": w, "status": "good"} for w in clean_tr.split() if w.strip()]
-            return {
-                "index": seg["index"],
-                "start_sec": seg["start_sec"],
-                "end_sec": seg["end_sec"],
-                "duration_sec": seg["duration_sec"],
-                "audio": seg["path"],
-                "turn_index": seg["index"],
-                "transcript": clean_tr,
-                "role": role,
-                "scored": False,
-                "scores": {"total": 6.0, "accuracy": 6.0, "fluency": 6.0, "prosodic": 6.0},
-                "errors": {"phonemes": [], "words": []},
-                "words_detail": words_fallback,
-                "transformer_feedback": {},
-            }, False
+            return _make_unscored_turn(
+                seg,
+                clean_tr,
+                role=role,
+                eligibility_reason=f"assess_error: {str(assess_err)[:40]}",
+            ), False
 
         return {
             "index": seg["index"],
@@ -377,6 +486,9 @@ class SpeakingPipeline:
             "turn_index": seg["index"],
             "role": role,
             "scored": True,
+            "is_vietnamese": False,
+            "language": "en",
+            "eligibility_reason": "scored",
             **track,
         }, False
 
@@ -406,10 +518,8 @@ class SpeakingPipeline:
 
         # ── Run L2-MDD model for full-phoneme scanning & ASHA error diagnosis ──
         # L2-MDD is the EXCLUSIVE authority for phoneme error detection and word error marking.
-        l2_turn_feedback = None
         final_errors = {"phonemes": [], "words": []}
         words_detail = []
-        l2_scan = None
         if self.l2_mdd is not None:
             try:
                 l2_result = self.l2_mdd.predict(
@@ -418,7 +528,6 @@ class SpeakingPipeline:
                     apply_preprocess=apply_preprocess,
                 )
                 l2_errors = l2_result.get("errors", {})
-                l2_scan = l2_result.get("scan_result")
                 # Hybrid error detection:
                 # 1. Use L2-MDD if it detected phonological errors (contains rich ASHA diagnostic tips)
                 # 2. If L2-MDD detected 0 errors but SpeechOcean detected acoustic errors, use SpeechOcean
@@ -443,33 +552,7 @@ class SpeakingPipeline:
             words_detail = pron_result.get("words_detail") or []
 
         # ── Hiệu chuẩn & Phân hóa điểm số dựa trên lỗi âm vị thực tế từ L2-MDD ──
-        # Phạt điểm Accuracy và Total khi có lỗi phát âm âm vị nghiêm trọng (ASHA critical/bad)
-        calibrated_scores = dict(pron_scores)
-        if words_detail:
-            num_crit = 0
-            num_warn = 0
-            for w in words_detail:
-                for ph in w.get("phones", []):
-                    st = ph.get("status")
-                    if st == "bad":
-                        num_crit += 1
-                    elif st == "warning":
-                        num_warn += 1
-
-            if num_crit > 0 or num_warn > 0:
-                # Mỗi âm vị phát âm sai nghiêm trọng trừ 0.55; cảnh báo trừ 0.20 (tối đa trừ 4.0 điểm)
-                pen = min(4.0, num_crit * 0.55 + num_warn * 0.20)
-                base_acc = float(pron_scores.get("accuracy", 7.0))
-                calibrated_acc = max(1.5, round(base_acc - pen, 2))
-                calibrated_scores["accuracy"] = calibrated_acc
-
-                # Tính lại Total score phản ánh đúng Accuracy sau khi trừ điểm
-                flu = float(pron_scores.get("fluency", 7.0))
-                pro = float(pron_scores.get("prosodic", 7.0))
-                calibrated_total = max(1.5, round(0.50 * calibrated_acc + 0.30 * flu + 0.20 * pro, 2))
-                calibrated_scores["total"] = calibrated_total
-
-        final_scores = calibrated_scores
+        final_scores = self.calibrate_scores_with_phonemes(pron_scores, words_detail)
 
         # Generate per-turn feedback
         transformer_feedback = PronunciationScorer.generate_transformer_feedback(
@@ -487,7 +570,7 @@ class SpeakingPipeline:
             "feedback": pron_result.get("feedback"),
             "feedback_source": pron_result.get("feedback_source"),
             "transformer_feedback": transformer_feedback,
-            "l2_mdd_feedback": l2_turn_feedback,
+            "l2_mdd_feedback": None,
             "words_detail": words_detail,
         }
 
@@ -522,6 +605,7 @@ class SpeakingPipeline:
                 "scored": score,
                 "sentences": [],
                 "sentence_count": 0,
+                "vietnamese_sentence_count": 0,
                 "transcript": "",
                 "transcript_lines": [],
                 "scores": {},
@@ -536,16 +620,17 @@ class SpeakingPipeline:
             )
             if was_vi:
                 filtered_vi += 1
-            elif item:
+            if item:
                 sentences.append(item)
 
         if not sentences and use_asr:
-            print(f"[{role}] Không có câu nói tiếng Anh hợp lệ sau ASR/LID ({len(segments)} turn, {filtered_vi} đoạn tiếng Việt)", flush=True)
+            print(f"[{role}] Không có lượt nói hợp lệ sau ASR ({len(segments)} turn, {filtered_vi} đoạn tiếng Việt)", flush=True)
             return {
                 "role": role,
                 "scored": score,
                 "sentences": [],
                 "sentence_count": 0,
+                "vietnamese_sentence_count": 0,
                 "transcript": "",
                 "transcript_lines": [],
                 "scores": {},
@@ -555,10 +640,6 @@ class SpeakingPipeline:
 
         summary = _build_summary(
             sentences,
-            pipeline=self,
-            feedback=fb,
-            lang=lang,
-            speaker=speaker if score else None,
             filtered_vi=filtered_vi,
         )
         return {
@@ -634,12 +715,7 @@ class SpeakingPipeline:
             if fb and student.get("sentences"):
                 lang_fb = _build_summary(
                     student["sentences"],
-                    pipeline=self,
-                    feedback=True,
-                    lang=lang,
-                    speaker="Student",
                     filtered_vi=student.get("filtered_vi_count", 0),
-                    exchanges=dialogue["student_turns"],
                 )
                 student["feedback"] = lang_fb["feedback"]
                 student["feedback_source"] = lang_fb["feedback_source"]
@@ -724,6 +800,7 @@ class SpeakingPipeline:
                         "scored": True,
                         "sentences": [],
                         "sentence_count": 0,
+                        "vietnamese_sentence_count": 0,
                         "transcript": "",
                         "transcript_lines": [],
                         "scores": {"total": 0.0, "accuracy": 0.0, "fluency": 0.0, "prosodic": 0.0},
@@ -764,20 +841,20 @@ class SpeakingPipeline:
                     "transcript": clean_ref,
                     "role": role,
                     "scored": True,
+                    "is_vietnamese": False,
+                    "language": "en",
+                    "eligibility_reason": "scored",
                     "scores": track["scores"],
                     "errors": track["errors"],
                     "words_detail": track.get("words_detail", []),
-                    "l2_scan": track.get("l2_scan"),
+                    "transformer_feedback": track.get("transformer_feedback"),
+                    "l2_mdd_feedback": None,
                     "feedback": track.get("feedback"),
                     "target_text_source": "provided_passage",
                 }
                 sentences = [sentence_item]
                 summary = _build_summary(
                     sentences,
-                    pipeline=self,
-                    feedback=fb,
-                    lang=lang,
-                    speaker="Student",
                     filtered_vi=0,
                 )
                 student_data = {
@@ -791,24 +868,12 @@ class SpeakingPipeline:
                     "audio": str(audio),
                     "student": student_data,
                     "dialogue": {
-                        "turns": [
-                            {
-                                "role": "student",
-                                "scored": True,
-                                "start_sec": 0.0,
-                                "end_sec": 0.0,
-                                "duration_sec": 0.0,
-                                "audio": str(audio),
-                                "transcript": clean_ref,
-                                "scores": track["scores"],
-                                "errors": track["errors"],
-                                "words_detail": track.get("words_detail", []),
-                                "feedback": track.get("feedback"),
-                            }
-                        ],
+                        "turns": [_serialize_dialogue_turn(sentence_item, role="student")],
+                        "student_turns": sentences,
                         "has_l2_mdd": self.l2_mdd is not None,
                     },
                     "has_l2_mdd": self.l2_mdd is not None,
+                    "overall_transformer_feedback": track.get("transformer_feedback"),
                 }
             except Exception as e:
                 print(f"[{role}] Read Aloud direct scoring warning: {e}. Fallback to segment-based assessment.", flush=True)
@@ -844,29 +909,26 @@ class SpeakingPipeline:
             )
             if was_vi:
                 filtered_vi += 1
-            elif item:
+            if item:
                 sentences.append(item)
 
         if not sentences:
-            print(f"[{role}] Không có câu nói tiếng Anh hợp lệ sau nhận diện", flush=True)
+            print(f"[{role}] Không có lượt nói hợp lệ sau nhận diện", flush=True)
             student_data = {
                 "role": role,
                 "scored": True,
                 "sentences": [],
                 "sentence_count": 0,
+                "vietnamese_sentence_count": 0,
                 "transcript": "",
                 "transcript_lines": [],
                 "scores": {"total": 0.0, "accuracy": 0.0, "fluency": 0.0, "prosodic": 0.0},
                 "filtered_vi_count": filtered_vi,
-                "message": f"{role}: không có câu nói tiếng Anh hợp lệ sau nhận diện",
+                "message": f"{role}: không có lượt nói hợp lệ sau nhận diện",
             }
         else:
             summary = _build_summary(
                 sentences,
-                pipeline=self,
-                feedback=fb,
-                lang=lang,
-                speaker="Student",
                 filtered_vi=filtered_vi,
             )
             student_data = {
@@ -877,22 +939,7 @@ class SpeakingPipeline:
             }
 
         dialogue = {
-            "turns": [
-                {
-                    "role": "student",
-                    "scored": True,
-                    "start_sec": s.get("start_sec"),
-                    "end_sec": s.get("end_sec"),
-                    "transcript": s.get("transcript", ""),
-                    "audio": s.get("audio"),
-                    "scores": s.get("scores"),
-                    "errors": s.get("errors"),
-                    "transformer_feedback": s.get("transformer_feedback"),
-                    "words_detail": s.get("words_detail"),
-                    "l2_mdd_feedback": s.get("l2_mdd_feedback"),
-                }
-                for s in sentences
-            ],
+            "turns": [_serialize_dialogue_turn(s, role="student") for s in sentences],
             "student_turns": sentences,
         }
 

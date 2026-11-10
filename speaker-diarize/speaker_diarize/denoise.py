@@ -1,5 +1,12 @@
+import sys
+import threading
+import types
+
 import numpy as np
 import torch
+
+_DF_LOCK = threading.Lock()
+_DF_MODEL_CACHE = None  # (model, df_state)
 
 # ---- DeepFilterNet: giới hạn mức khử nhiễu tối đa ----
 ATTEN_LIM_DB = 10.0
@@ -23,36 +30,51 @@ GAIN_SMOOTH_MS = 60
 # ---- Giới hạn biên độ cuối cùng để tránh clipping sau khi khuếch đại ----
 OUTPUT_PEAK = 0.97
 
-def denoise_with_deepfilternet(audio, sr):
-    import torchaudio
-    import sys, types
-    if not hasattr(torchaudio, 'backend'):
-        torchaudio.backend = types.ModuleType('torchaudio.backend')
-        sys.modules['torchaudio.backend'] = torchaudio.backend
-    if not hasattr(torchaudio.backend, 'common'):
-        torchaudio.backend.common = types.ModuleType('torchaudio.backend.common')
-        sys.modules['torchaudio.backend.common'] = torchaudio.backend.common
-        torchaudio.backend.common.AudioMetaData = getattr(torchaudio, 'AudioMetaData', type('AudioMetaData', (), {}))
 
-    from df.enhance import enhance, init_df
-    
-    # init_df() requires no args for default behavior
-    model, df_state, _ = init_df()
-    
-    # Use torchaudio for resampling if needed
+def _ensure_torchaudio_compat() -> None:
+    """Provide torchaudio.backend.common shim for DeepFilterNet on torchaudio >= 2.1."""
+    import torchaudio
+
+    if not hasattr(torchaudio, "backend"):
+        torchaudio.backend = types.ModuleType("torchaudio.backend")
+        sys.modules["torchaudio.backend"] = torchaudio.backend
+    if not hasattr(torchaudio.backend, "common"):
+        torchaudio.backend.common = types.ModuleType("torchaudio.backend.common")
+        sys.modules["torchaudio.backend.common"] = torchaudio.backend.common
+        torchaudio.backend.common.AudioMetaData = getattr(
+            torchaudio, "AudioMetaData", type("AudioMetaData", (), {})
+        )
+
+
+def _get_df_model():
+    global _DF_MODEL_CACHE
+    if _DF_MODEL_CACHE is not None:
+        return _DF_MODEL_CACHE
+    with _DF_LOCK:
+        if _DF_MODEL_CACHE is None:
+            _ensure_torchaudio_compat()
+            from df.enhance import init_df
+
+            model, df_state, _ = init_df()
+            _DF_MODEL_CACHE = (model, df_state)
+        return _DF_MODEL_CACHE
+
+
+def denoise_with_deepfilternet(audio, sr):
+    from df.enhance import enhance
     import torchaudio.transforms as T
-    
-    wav = torch.from_numpy(audio.astype(np.float32)).unsqueeze(0) # (1, samples)
+
+    model, df_state = _get_df_model()
+
+    wav = torch.from_numpy(audio.astype(np.float32)).unsqueeze(0)  # (1, samples)
     if sr != df_state.sr():
-        resampler = T.Resample(sr, df_state.sr())
-        wav = resampler(wav)
-        
+        wav = T.Resample(sr, df_state.sr())(wav)
+
     enhanced = enhance(model, df_state, wav, atten_lim_db=ATTEN_LIM_DB)
-    
+
     if sr != df_state.sr():
-        resampler = T.Resample(df_state.sr(), sr)
-        enhanced = resampler(enhanced)
-        
+        enhanced = T.Resample(df_state.sr(), sr)(enhanced)
+
     enhanced_arr = enhanced.detach().cpu().numpy().astype(np.float32)
     while enhanced_arr.ndim > 2:
         enhanced_arr = enhanced_arr[0]
@@ -60,7 +82,7 @@ def denoise_with_deepfilternet(audio, sr):
         enhanced_np = enhanced_arr
     else:
         enhanced_np = enhanced_arr.mean(axis=0).astype(np.float32)
-    
+
     return enhanced_np, sr
 
 

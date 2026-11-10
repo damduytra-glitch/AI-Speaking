@@ -9,16 +9,50 @@ from typing import Any, Dict, Optional
 
 import torch
 import yaml
-from dotenv import load_dotenv
 
 from data.audio_preprocess import PreprocessConfig, load_waveform, truncate_waveform
 from data.cmudict import CMUDict
+from env_config import load_project_env
 from models.checkpoint_utils import load_model_weights, resolve_checkpoint
 from models.pronunciation_model import PronunciationAssessmentModel
 from models.pronunciation_scorer import PronunciationScorer
 from paths import PRONUNCIATION_CONFIG
 
-load_dotenv()
+load_project_env()
+
+
+def _words_to_phones_and_ranges(cmudict: CMUDict, text: str):
+    groups = cmudict.words_to_phoneme_groups(text)
+    tokens, words, ranges = [], [], []
+    for g in groups:
+        s = len(tokens)
+        tokens.extend(g["phones"])
+        words.append(g["word"])
+        ranges.append((s, len(tokens)))
+    return tokens, words, ranges
+
+
+def _detect_lora_cfg_from_sd(sd: Dict[str, Any]) -> Dict[str, Any]:
+    """Inspect a state_dict to extract LoRA rank & target module names automatically."""
+    target_modules = []
+    seen = set()
+    lora_r = 8
+    for k, v in sd.items():
+        if ".lora_A." in k and k.endswith(".weight"):
+            prefix = k.split(".lora_A.")[0]
+            mod_name = prefix.rsplit(".", 1)[-1]
+            if mod_name not in seen:
+                seen.add(mod_name)
+                target_modules.append(mod_name)
+            if hasattr(v, "shape") and len(v.shape) == 2:
+                lora_r = int(v.shape[0])
+    use_lora = bool(target_modules) or any("lora" in k.lower() for k in sd.keys())
+    return {
+        "use_lora": use_lora,
+        "lora_r": lora_r,
+        "lora_alpha": lora_r * 2,
+        "lora_target_modules": target_modules or ["q_proj", "v_proj"],
+    }
 
 
 class Predictor:
@@ -50,13 +84,14 @@ class Predictor:
             if ckpt_candidate and os.path.isfile(ckpt_candidate):
                 from models.checkpoint_utils import load_state_dict as _load_sd
                 sd_sample = _load_sd(ckpt_candidate, "cpu")
-                if any("lora" in k.lower() for k in sd_sample.keys()):
+                lora_info = _detect_lora_cfg_from_sd(sd_sample)
+                if lora_info["use_lora"]:
                     if "wavlm" not in self.config:
                         self.config["wavlm"] = {}
                     self.config["wavlm"]["use_lora"] = True
-                    self.config["wavlm"].setdefault("lora_r", 8)
-                    self.config["wavlm"].setdefault("lora_alpha", 16)
-                    self.config["wavlm"].setdefault("lora_target_modules", ["q_proj", "v_proj"])
+                    self.config["wavlm"]["lora_r"] = lora_info["lora_r"]
+                    self.config["wavlm"].setdefault("lora_alpha", lora_info["lora_alpha"])
+                    self.config["wavlm"]["lora_target_modules"] = lora_info["lora_target_modules"]
 
             self.model = PronunciationAssessmentModel(self.config).to(self.device)
             if load_progress is not None:
@@ -98,14 +133,7 @@ class Predictor:
         )
 
     def _phones_from_text(self, text: str):
-        groups = self.cmudict.words_to_phoneme_groups(text)
-        tokens, words, ranges = [], [], []
-        for g in groups:
-            s = len(tokens)
-            tokens.extend(g["phones"])
-            words.append(g["word"])
-            ranges.append((s, len(tokens)))
-        return tokens, words, ranges
+        return _words_to_phones_and_ranges(self.cmudict, text)
 
     @torch.no_grad()
     def predict(
@@ -200,16 +228,25 @@ class L2MDDPredictor:
 
             ckpt_path = None
             sd = None
-            use_lora = False
+            lora_info = {"use_lora": False, "lora_r": 8, "lora_alpha": 16, "lora_target_modules": ["q_proj", "v_proj"]}
             try:
                 ckpt_path = resolve_checkpoint(self.config, model="l2_mdd", explicit=checkpoint)
                 if ckpt_path and os.path.isfile(ckpt_path):
                     sd = _load_sd(ckpt_path, self.device)
-                    use_lora = any("lora" in k.lower() for k in sd.keys())
+                    lora_info = _detect_lora_cfg_from_sd(sd)
             except FileNotFoundError as e:
                 print(f"Warning (L2-MDD): {e}")
 
-            self.model = L2MDDModel(wavlm_name=wavlm_name, ff_dim=2048, use_lora=use_lora).to(self.device)
+            use_canon_cond = (sd is None) or any("canon_emb." in k for k in sd.keys())
+            self.model = L2MDDModel(
+                wavlm_name=wavlm_name,
+                ff_dim=2048,
+                use_lora=lora_info["use_lora"],
+                lora_r=lora_info["lora_r"],
+                lora_alpha=lora_info["lora_alpha"],
+                lora_target_modules=lora_info["lora_target_modules"],
+                use_canon_conditioning=use_canon_cond,
+            ).to(self.device)
 
             if load_progress is not None:
                 load_progress.finish(model_step)
@@ -236,14 +273,7 @@ class L2MDDPredictor:
         self.cmudict = CMUDict(self.config["paths"].get("cmudict_path"))
 
     def _phones_from_text(self, text: str):
-        groups = self.cmudict.words_to_phoneme_groups(text)
-        tokens, words, ranges = [], [], []
-        for g in groups:
-            s = len(tokens)
-            tokens.extend(g["phones"])
-            words.append(g["word"])
-            ranges.append((s, len(tokens)))
-        return tokens, words, ranges
+        return _words_to_phones_and_ranges(self.cmudict, text)
 
     @torch.no_grad()
     def scan_phonemes(

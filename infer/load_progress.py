@@ -11,10 +11,12 @@ StepDef = Tuple[str, str, int]
 
 STEPS: List[StepDef] = [
     ("config", "Đọc cấu hình", 3),
-    ("pronunciation", "Chấm điểm: WavLM + Transformer", 55),
-    ("pronunciation_ckpt", "Checkpoint pronunciation.pt", 18),
-    ("whisper_proc", "Whisper: tokenizer + processor", 8),
-    ("whisper_model", "Whisper: tải weights ASR", 16),
+    ("pronunciation", "Chấm điểm: WavLM + Transformer", 38),
+    ("pronunciation_ckpt", "Checkpoint pronunciation.pt", 12),
+    ("l2_mdd", "Phân tích âm vị: WavLM + L2-MDD", 14),
+    ("l2_mdd_ckpt", "Checkpoint l2_mdd_best.pt", 6),
+    ("whisper_proc", "Whisper: tokenizer + processor", 5),
+    ("whisper_model", "Whisper: tải weights ASR", 22),
 ]
 
 

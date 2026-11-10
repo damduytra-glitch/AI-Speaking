@@ -1,6 +1,6 @@
 -- ==============================================================================
 -- SpeakAI Web Platform - Complete Database Schema (Latest from Supabase)
--- Project: SpeakAI (https://kngkckshvgaqeiatryqy.supabase.co)
+-- Project: SpeakAI (configure SUPABASE_URL in `.env`)
 -- Version: 2.1 (Sync with Supabase Live DB - Gemini 3.7 Flash Evaluation & Dual Mode)
 -- Hướng dẫn: Toàn bộ bảng, cột, storage và quyền hạn được đồng bộ chuẩn xác 100%.
 -- ==============================================================================

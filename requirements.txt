@@ -1,0 +1,47 @@
+# ============================================================
+# SpeakAI-Eval — Python Dependencies
+# ============================================================
+# Khuyến nghị Python 3.10 - 3.12.
+# Nếu chạy GPU NVIDIA CUDA, cài PyTorch CUDA trước theo hướng dẫn pytorch.org,
+# sau đó chạy: pip install -r requirements.txt
+# ============================================================
+
+# --- Core Deep Learning & Audio ---
+torch>=2.1.0
+torchaudio>=2.1.0
+torch-geometric>=2.4.0
+numpy>=1.24.0
+scipy>=1.10.0
+soundfile>=0.12.1
+
+# --- ASR (Whisper-large-v3), WavLM & NLP ---
+transformers>=4.36.0
+peft>=0.7.0
+accelerate>=0.26.0
+safetensors>=0.4.0
+nltk>=3.8.1
+
+# --- Speaker Diarization (ERes2Net) & Denoise ---
+huggingface_hub>=0.23.0
+modelscope>=1.14.0
+addict>=2.4.0
+speechbrain>=1.0.0
+# Lưu ý: DeepFilterNet yêu cầu Rust/Cargo khi build từ source trên Python 3.12+.
+# Nếu thiếu compiler, pipeline tự fallback sang noisereduce.
+deepfilternet>=0.5.6
+noisereduce>=3.0.0
+
+# --- FastAPI Backend & Configuration ---
+fastapi>=0.110.0
+uvicorn[standard]>=0.27.0
+python-multipart>=0.0.9
+PyYAML>=6.0.1
+python-dotenv>=1.0.0
+requests>=2.31.0
+
+# --- Evaluation & Testing Utilities ---
+pandas>=2.0.0
+matplotlib>=3.7.0
+tqdm>=4.65.0
+httpx>=0.27.0
+
