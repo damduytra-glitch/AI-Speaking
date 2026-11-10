@@ -36,7 +36,8 @@ classroom_lang/
 configs/
 infer/
 models/
-scripts/
+scripts/*
+!scripts/build_vercel_config.js
 tests/
 supabase/
 venv/

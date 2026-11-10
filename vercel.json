@@ -1,7 +1,7 @@
 {
   "version": 2,
   "outputDirectory": ".",
-  "buildCommand": "node -e 'const fs=require(\"fs\");if(process.env.SUPABASE_URL&&process.env.SUPABASE_ANON_KEY){fs.writeFileSync(\"web/js/config.js\",\"export const APP_CONFIG = \"+JSON.stringify({SUPABASE_URL:process.env.SUPABASE_URL,SUPABASE_ANON_KEY:process.env.SUPABASE_ANON_KEY,DEFAULT_GEMINI_ENDPOINT:process.env.DEFAULT_GEMINI_ENDPOINT||\"https://revidapi.com/v1/chat/completions\",DEFAULT_GEMINI_MODEL:process.env.DEFAULT_GEMINI_MODEL||\"gemini-3.7-flash\",SPEAKAI_API_URL:process.env.SPEAKAI_API_URL||\"\"},null,2)+\";\\n\")}else if(!fs.existsSync(\"web/js/config.js\")){fs.copyFileSync(\"web/js/config.example.js\",\"web/js/config.js\")}'",
+  "buildCommand": "node scripts/build_vercel_config.js",
   "rewrites": [
     {
       "source": "/(.*)",
