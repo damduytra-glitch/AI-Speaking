@@ -33,7 +33,7 @@ def load_audio(path: str | Path) -> tuple[np.ndarray, int]:
         p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         if p.returncode != 0:
             raise RuntimeError(f"Failed to load audio {path}: {p.stderr.decode('utf-8', errors='ignore')}")
-        mono = np.frombuffer(p.stdout, dtype=np.float32)
+        mono = np.frombuffer(p.stdout, dtype=np.float32).copy()
         return mono, SAMPLE_RATE
 
 

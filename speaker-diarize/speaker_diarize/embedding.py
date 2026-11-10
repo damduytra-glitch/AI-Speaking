@@ -68,8 +68,9 @@ def _compute_fbank(wav: np.ndarray, sample_rate: int = SAMPLE_RATE, n_mels: int 
         sample_frequency=sample_rate,
         frame_length=25.0,
         frame_shift=10.0,
-        window_type='hamming',
+        window_type='povey',
         use_energy=False,
+        dither=0.0,
     )  # (num_frames, n_mels)
     
     # Chuẩn hoá CMVN (Cepstral Mean and Variance Normalization)
@@ -110,11 +111,12 @@ class ERes2NetEmbedder:
         try:
             model_obj = getattr(self.sv_pipeline, 'model', None)
             if model_obj is not None:
-                # ModelScope wraps the actual nn.Module inside model.model hoặc trực tiếp
-                inner = getattr(model_obj, 'model', model_obj)
-                if hasattr(inner, 'forward') and callable(inner.forward):
+                # SpeakerVerificationERes2Net wraps the actual nn.Module inside `embedding_model`
+                inner = getattr(model_obj, 'embedding_model', None) or getattr(model_obj, 'model', None)
+                if inner is not None and isinstance(inner, torch.nn.Module):
+                    inner.to(self.device)
+                    inner.eval()
                     self._raw_model = inner
-                    self._raw_model.eval()
                     print(f"[{name}] ✅ Raw PyTorch model extracted — embed_direct/embed_batch enabled (zero I/O)")
         except Exception as e:
             print(f"[{name}] ⚠️ Could not extract raw model ({e}), falling back to file-based embed()")
@@ -211,7 +213,7 @@ class ERes2NetEmbedder:
 
         # Chia thành các mini-batch để tránh tràn VRAM với file audio rất dài
         n_mels = fbanks[0].shape[2]
-        BATCH_SIZE = 64
+        BATCH_SIZE = 32
         all_embeddings = [None] * len(audio_list)
         
         for batch_start in range(0, len(fbanks), BATCH_SIZE):

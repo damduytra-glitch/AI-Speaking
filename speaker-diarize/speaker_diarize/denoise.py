@@ -52,10 +52,14 @@ def _get_df_model():
         return _DF_MODEL_CACHE
     with _DF_LOCK:
         if _DF_MODEL_CACHE is None:
-            _ensure_torchaudio_compat()
-            from df.enhance import init_df
+            import warnings
 
-            model, df_state, _ = init_df()
+            _ensure_torchaudio_compat()
+            with warnings.catch_warnings():
+                warnings.filterwarnings("ignore", message=".*AudioMetaData.*", category=UserWarning)
+                from df.enhance import init_df
+
+                model, df_state, _ = init_df()
             _DF_MODEL_CACHE = (model, df_state)
         return _DF_MODEL_CACHE
 

@@ -30,7 +30,7 @@ def load_audio_file(path: PathLike) -> Tuple[torch.Tensor, int]:
         p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         if p.returncode != 0:
             raise RuntimeError(f"Failed to load audio {path}: {p.stderr.decode('utf-8', errors='ignore')}")
-        data = np.frombuffer(p.stdout, dtype=np.float32)
+        data = np.frombuffer(p.stdout, dtype=np.float32).copy()
         return torch.from_numpy(data).unsqueeze(0), 16000
 
 

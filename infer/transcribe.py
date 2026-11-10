@@ -178,6 +178,8 @@ class WhisperTranscriber:
             pass
 
         self.model = WhisperForConditionalGeneration.from_pretrained(self.model_name, **load_kw)
+        if getattr(self.model, "generation_config", None) is not None:
+            self.model.generation_config.max_length = None
         self.model.to(self.device)
         self.model.eval()
 
