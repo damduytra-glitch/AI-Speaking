@@ -6,8 +6,8 @@ read credentials from one source of truth:
   2. Process environment variables (`os.environ`)
   3. Kaggle Secrets (`kaggle_secrets.UserSecretsClient`) when running inside Kaggle
 
-Private backend keys (e.g. `HF_TOKEN`, `SUPABASE_SERVICE_ROLE_KEY`) stay strictly
-server-side and are NEVER exported to frontend `web/js/config.js`.
+Private backend keys (e.g. `HF_TOKEN`, `SUPABASE_SERVICE_ROLE_KEY`, `GEMINI_API_KEY`) stay strictly
+server-side and are NEVER exported to `web/.env.local`.
 """
 
 from __future__ import annotations
@@ -20,7 +20,7 @@ ROOT = Path(__file__).resolve().parent
 DEFAULT_ENV_FILE = ROOT / ".env"
 
 DEFAULT_GEMINI_ENDPOINT = "https://revidapi.com/v1/chat/completions"
-DEFAULT_GEMINI_MODEL = "gemini-3.7-flash"
+DEFAULT_GEMINI_MODEL = "gemini-3.8-flash"
 
 _ENV_LOADED = False
 
@@ -101,6 +101,18 @@ def get_supabase_config() -> Tuple[str, str]:
         aliases=("SUPABASE_KEY", "SUPABASE_SERVICE_ROLE_KEY"),
     )
     return url, key
+
+
+def get_supabase_service_config() -> Tuple[str, str]:
+    """Return `(supabase_url, supabase_service_role_key)` strictly for server-side callers."""
+    url = get_secret("SUPABASE_URL").rstrip("/")
+    service_key = get_secret("SUPABASE_SERVICE_ROLE_KEY")
+    return url, service_key
+
+
+def get_gemini_api_key() -> str:
+    """Return optional server-side fallback Gemini/LLM API key."""
+    return get_secret("GEMINI_API_KEY", aliases=("SPEAKAI_GEMINI_API_KEY",))
 
 
 def get_hf_token() -> str:

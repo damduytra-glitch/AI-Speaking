@@ -1,5 +1,3 @@
 {
-  "version": 2,
-  "outputDirectory": "web",
-  "buildCommand": "[ -f web/build_config.js ] && node web/build_config.js || node build_config.js"
+  "$schema": "https://openapi.vercel.sh/vercel.json"
 }

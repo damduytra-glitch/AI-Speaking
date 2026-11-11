@@ -1,6 +1,4 @@
 {
-  "version": 2,
-  "outputDirectory": ".",
-  "buildCommand": "node build_config.js"
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": "nextjs"
 }
-

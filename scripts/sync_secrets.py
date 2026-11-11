@@ -1,4 +1,4 @@
-"""Sync public-safe frontend configuration from centralized `.env` to `web/js/config.js`.
+"""Sync public-safe frontend configuration from centralized `.env` to `web/.env.local`.
 
 Usage:
     python scripts/sync_secrets.py
@@ -8,7 +8,6 @@ Usage:
 from __future__ import annotations
 
 import argparse
-import json
 import sys
 from pathlib import Path
 
@@ -18,22 +17,33 @@ if str(ROOT) not in sys.path:
 
 from env_config import DEFAULT_ENV_FILE, get_frontend_config, load_project_env
 
-TARGET_JS = ROOT / "web" / "js" / "config.js"
+TARGET_ENV_LOCAL = ROOT / "web" / ".env.local"
 
 
-def render_config_js(cfg: dict[str, str]) -> str:
-    payload = json.dumps(cfg, indent=2, ensure_ascii=False)
-    return (
-        "// ============================================================\n"
-        "// AUTO-GENERATED FROM .env BY scripts/sync_secrets.py\n"
-        "// File này được liệt kê trong .gitignore — KHÔNG commit lên Git!\n"
-        "// ============================================================\n"
-        f"export const APP_CONFIG = {payload};\n"
-    )
+def _quote_env(value: str) -> str:
+    clean = str(value or "").replace("\r", "").replace("\n", "")
+    escaped = clean.replace("\\", "\\\\").replace('"', '\\"')
+    return f'"{escaped}"'
+
+
+def render_env_local(cfg: dict[str, str]) -> str:
+    lines = [
+        "# ============================================================",
+        "# AUTO-GENERATED FROM .env BY scripts/sync_secrets.py",
+        "# Chỉ chứa biến NEXT_PUBLIC_* công khai — KHÔNG commit lên Git!",
+        "# ============================================================",
+        f'NEXT_PUBLIC_SUPABASE_URL={_quote_env(cfg.get("SUPABASE_URL", ""))}',
+        f'NEXT_PUBLIC_SUPABASE_ANON_KEY={_quote_env(cfg.get("SUPABASE_ANON_KEY", ""))}',
+        f'NEXT_PUBLIC_DEFAULT_GEMINI_ENDPOINT={_quote_env(cfg.get("DEFAULT_GEMINI_ENDPOINT", ""))}',
+        f'NEXT_PUBLIC_DEFAULT_GEMINI_MODEL={_quote_env(cfg.get("DEFAULT_GEMINI_MODEL", ""))}',
+        f'NEXT_PUBLIC_SPEAKAI_API_URL={_quote_env(cfg.get("SPEAKAI_API_URL", ""))}',
+        "",
+    ]
+    return "\n".join(lines)
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Sync centralized .env secrets to web/js/config.js")
+    parser = argparse.ArgumentParser(description="Sync centralized .env public config to web/.env.local")
     parser.add_argument(
         "--check",
         action="store_true",
@@ -60,18 +70,17 @@ def main() -> int:
         print(f"✅ Env config hợp lệ ({DEFAULT_ENV_FILE if has_env else 'process env'}).")
         return 0
 
-    TARGET_JS.parent.mkdir(parents=True, exist_ok=True)
-    TARGET_JS.write_text(render_config_js(cfg), encoding="utf-8")
+    TARGET_ENV_LOCAL.parent.mkdir(parents=True, exist_ok=True)
+    TARGET_ENV_LOCAL.write_text(render_env_local(cfg), encoding="utf-8")
 
-    rel = TARGET_JS.relative_to(ROOT).as_posix()
+    rel = TARGET_ENV_LOCAL.relative_to(ROOT).as_posix()
     if missing:
         print(f"⚠️ Đã tạo {rel}, nhưng SUPABASE_URL hoặc SUPABASE_ANON_KEY vẫn đang trống/placeholder.")
         print("   Hãy điền vào file .env rồi chạy lại: python scripts/sync_secrets.py")
     else:
-        print(f"✅ Đã đồng bộ cấu hình từ .env -> {rel}")
+        print(f"✅ Đã đồng bộ cấu hình công khai từ .env -> {rel}")
     return 0
 
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

@@ -13,6 +13,13 @@ kaggle.json
 *.pem
 *.key
 
+# Next.js build cache & dependencies (built fresh on Vercel)
+web/.next/
+web/node_modules/
+web/out/
+web/tsconfig.tsbuildinfo
+web/next-env.d.ts
+
 # Machine Learning & AI Models (Đã chạy trên Kaggle GPU)
 web/models/
 transformer_models/

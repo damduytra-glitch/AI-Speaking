@@ -11,6 +11,7 @@ endpoints will return a 503 error.
 from __future__ import annotations
 
 import builtins
+import hashlib
 import json
 import os
 import re
@@ -23,15 +24,26 @@ import uuid
 from pathlib import Path
 from typing import Optional
 
-import numpy as np
+try:
+    import numpy as np
+except ImportError:  # pragma: no cover
+    np = None  # type: ignore[assignment]
+import requests
 import uvicorn
-from fastapi import BackgroundTasks, FastAPI, File, Form, UploadFile
+from fastapi import BackgroundTasks, Depends, FastAPI, File, Form, Header, HTTPException, Request, UploadFile
 from fastapi.encoders import jsonable_encoder
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from env_config import get_supabase_config, load_project_env
+from env_config import (
+    DEFAULT_GEMINI_ENDPOINT,
+    DEFAULT_GEMINI_MODEL,
+    get_gemini_api_key,
+    get_supabase_config,
+    get_supabase_service_config,
+    load_project_env,
+)
 
 load_project_env()
 
@@ -40,8 +52,8 @@ MAX_TASK_HISTORY = 100
 
 
 # ── Cloudflare Tunnel ──────────────────────────────────────────────────
-def start_cloudflare_tunnel(port: int = 8000) -> Optional[str]:
-    """Start a Cloudflare Quick Tunnel and return the public URL."""
+def start_cloudflare_tunnel(port: int = 8000, timeout_sec: float = 35.0) -> Optional[str]:
+    """Start a Cloudflare Quick Tunnel, return the public URL, and drain stdout."""
     print("Starting Cloudflare Quick Tunnel...")
     cmd = ["cloudflared", "tunnel", "--url", f"http://127.0.0.1:{port}"]
     try:
@@ -50,37 +62,71 @@ def start_cloudflare_tunnel(port: int = 8000) -> Optional[str]:
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             text=True,
+            bufsize=1,
         )
     except FileNotFoundError:
         print("❌ cloudflared not found. Skipping tunnel.")
         return None
 
-    url = None
-    for _ in range(20):
-        line = process.stdout.readline() if process.stdout else ""
-        match = re.search(r"https://[a-zA-Z0-9-]+\.trycloudflare\.com", line)
-        if match:
-            url = match.group(0)
-            break
-        time.sleep(0.5)
+    url_holder: list[str] = []
+    found_event = threading.Event()
+
+    def _reader() -> None:
+        stream = process.stdout
+        if stream is None:
+            found_event.set()
+            return
+        try:
+            while True:
+                line = stream.readline()
+                if not line:
+                    break
+                if not url_holder:
+                    match = re.search(r"https://[a-zA-Z0-9-]+\.trycloudflare\.com", line)
+                    if match:
+                        url_holder.append(match.group(0))
+                        found_event.set()
+        except Exception:
+            pass
+        finally:
+            found_event.set()
+            try:
+                stream.close()
+            except Exception:
+                pass
+
+    reader_thread = threading.Thread(target=_reader, daemon=True)
+    reader_thread.start()
+    found_event.wait(timeout=timeout_sec)
+
+    url = url_holder[0] if url_holder else None
+    if url is None and process.poll() is None:
+        try:
+            process.terminate()
+        except Exception:
+            pass
     return url
 
 
 def _update_supabase_url(public_url: str) -> None:
-    """Push the tunnel URL to Supabase global_settings using centralized env/Kaggle secrets."""
-    supabase_url, supabase_key = get_supabase_config()
-    if not supabase_url or not supabase_key:
-        print("⚠️ Thiếu SUPABASE_URL hoặc SUPABASE_ANON_KEY trong .env / Kaggle Secrets — bỏ qua cập nhật Supabase.")
+    """Push the tunnel URL to Supabase global_settings using Service Role Key (RLS-safe)."""
+    supabase_url, service_key = get_supabase_service_config()
+    if not service_key:
+        supabase_url, fallback_key = get_supabase_config()
+        if fallback_key:
+            print("⚠️ Thiếu SUPABASE_SERVICE_ROLE_KEY — với RLS đang bật, hãy thêm SUPABASE_SERVICE_ROLE_KEY vào .env / Kaggle Secrets.")
+        service_key = fallback_key
+
+    if not supabase_url or not service_key:
+        print("⚠️ Thiếu SUPABASE_URL hoặc SUPABASE_SERVICE_ROLE_KEY trong .env / Kaggle Secrets — bỏ qua cập nhật Supabase.")
         return
 
     try:
-        import requests
-
         r = requests.patch(
             f"{supabase_url}/rest/v1/global_settings?id=eq.1",
             headers={
-                "apikey": supabase_key,
-                "Authorization": f"Bearer {supabase_key}",
+                "apikey": service_key,
+                "Authorization": f"Bearer {service_key}",
                 "Content-Type": "application/json",
                 "Prefer": "return=minimal",
             },
@@ -93,6 +139,124 @@ def _update_supabase_url(public_url: str) -> None:
             print(f"❌ Lỗi cập nhật Supabase: {r.text}")
     except Exception as e:
         print(f"❌ Lỗi cập nhật Supabase: {e}")
+
+
+# ── Supabase JWT Verification & RBAC Cache ─────────────────────────────
+AUTH_CACHE_TTL_SEC = 60.0
+_AUTH_CACHE: dict[str, tuple[float, dict]] = {}
+_auth_cache_lock = threading.Lock()
+
+
+def clear_auth_cache() -> None:
+    """Clear verified JWT cache (useful for tests or key rotation)."""
+    with _auth_cache_lock:
+        _AUTH_CACHE.clear()
+
+
+def _verify_supabase_jwt(token: str) -> dict:
+    """Verify Supabase access token and load caller's role + status from profiles."""
+    token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
+    now = time.time()
+    with _auth_cache_lock:
+        cached = _AUTH_CACHE.get(token_hash)
+        if cached and (now - cached[0]) < AUTH_CACHE_TTL_SEC:
+            return dict(cached[1])
+
+    supabase_url, supabase_anon_key = get_supabase_config()
+    svc_url, service_key = get_supabase_service_config()
+    base_url = svc_url or supabase_url
+    if not base_url or not (supabase_anon_key or service_key):
+        raise HTTPException(
+            status_code=500,
+            detail="Thiếu cấu hình SUPABASE_URL hoặc SUPABASE_ANON_KEY trên backend.",
+        )
+
+    auth_apikey = supabase_anon_key or service_key
+    try:
+        user_resp = requests.get(
+            f"{base_url}/auth/v1/user",
+            headers={
+                "apikey": auth_apikey,
+                "Authorization": f"Bearer {token}",
+            },
+            timeout=10,
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Không thể kết nối Supabase Auth: {exc}")
+
+    if user_resp.status_code != 200:
+        raise HTTPException(status_code=401, detail="Phiên đăng nhập không hợp lệ hoặc đã hết hạn.")
+
+    try:
+        user_data = user_resp.json()
+    except ValueError:
+        user_data = {}
+
+    uid = str(user_data.get("id") or "").strip()
+    if not uid:
+        raise HTTPException(status_code=401, detail="Không xác định được danh tính tài khoản.")
+
+    prof_apikey = service_key or auth_apikey
+    prof_bearer = service_key or token
+    try:
+        prof_resp = requests.get(
+            f"{base_url}/rest/v1/profiles",
+            params={
+                "id": f"eq.{uid}",
+                "select": "id,role,status,email,voice_embeddings",
+                "limit": "1",
+            },
+            headers={
+                "apikey": prof_apikey,
+                "Authorization": f"Bearer {prof_bearer}",
+            },
+            timeout=10,
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Lỗi truy vấn hồ sơ phân quyền: {exc}")
+
+    if prof_resp.status_code != 200:
+        raise HTTPException(status_code=403, detail="Không thể xác minh phân quyền tài khoản.")
+
+    try:
+        rows = prof_resp.json()
+    except ValueError:
+        rows = []
+
+    profile = rows[0] if isinstance(rows, list) and rows else None
+    if not profile:
+        raise HTTPException(status_code=403, detail="Tài khoản chưa có hồ sơ phân quyền.")
+
+    status = str(profile.get("status") or "active").strip().lower()
+    if status != "active":
+        msg = (
+            "Tài khoản Giáo viên đang chờ Quản trị viên phê duyệt."
+            if status == "pending"
+            else "Tài khoản của bạn hiện đang bị tạm khóa."
+        )
+        raise HTTPException(status_code=403, detail=msg)
+
+    verified = {
+        "id": uid,
+        "role": str(profile.get("role") or "student").strip().lower(),
+        "status": status,
+        "email": profile.get("email") or user_data.get("email") or "",
+        "voice_embeddings": profile.get("voice_embeddings"),
+        "token": token,
+    }
+    with _auth_cache_lock:
+        _AUTH_CACHE[token_hash] = (now, dict(verified))
+    return verified
+
+
+def require_active_user(authorization: Optional[str] = Header(None)) -> dict:
+    """FastAPI dependency requiring an active, authenticated Supabase user."""
+    if not authorization or not authorization.lower().startswith("bearer "):
+        raise HTTPException(status_code=401, detail="Thiếu Authorization Bearer JWT.")
+    token = authorization.split(" ", 1)[1].strip()
+    if not token:
+        raise HTTPException(status_code=401, detail="Token xác thực không hợp lệ.")
+    return _verify_supabase_jwt(token)
 
 
 # ── Resolve globals from notebook context ──────────────────────────────
@@ -138,15 +302,23 @@ def _parse_bool_flag(val: object, *, default: bool = False) -> bool:
     return s in ("true", "1", "yes", "t")
 
 
-def _parse_embedding_json(emb_json: Optional[str]) -> Optional[np.ndarray]:
+def _parse_embedding_json(emb_json: Optional[str]):
     emb_list = json.loads(emb_json or "[]")
     if not emb_list:
         return None
-    emb = np.array(emb_list, dtype=np.float32)
-    if emb.ndim == 2:
-        emb = np.mean(emb, axis=0)
-    emb /= np.linalg.norm(emb) + 1e-8
-    return emb
+    if np is not None:
+        emb = np.array(emb_list, dtype=np.float32)
+        if emb.ndim == 2:
+            emb = np.mean(emb, axis=0)
+        emb /= np.linalg.norm(emb) + 1e-8
+        return emb
+    if isinstance(emb_list[0], list):
+        cols = len(emb_list[0])
+        vec = [sum(float(row[i]) for row in emb_list) / len(emb_list) for i in range(cols)]
+    else:
+        vec = [float(x) for x in emb_list]
+    norm = sum(v * v for v in vec) ** 0.5 + 1e-8
+    return [v / norm for v in vec]
 
 
 # ── FastAPI App ────────────────────────────────────────────────────────
@@ -218,6 +390,7 @@ def _enqueue_assessment(
     background_tasks: BackgroundTasks,
     audio: UploadFile,
     *,
+    owner_id: Optional[str] = None,
     teacher_embeddings_json: str = "[]",
     student_embeddings_json: str = "[]",
     score_teacher: bool = False,
@@ -228,6 +401,7 @@ def _enqueue_assessment(
     task_id = str(uuid.uuid4())
     with _tasks_lock:
         tasks[task_id] = {
+            "owner_id": owner_id,
             "status": "processing",
             "step": "Đang tải file âm thanh lên server...",
             "result": None,
@@ -268,7 +442,10 @@ def _enqueue_assessment(
 
 
 @app.post("/extract_embedding")
-def extract_embedding_api(audio: UploadFile = File(...)):
+def extract_embedding_api(
+    audio: UploadFile = File(...),
+    user: dict = Depends(require_active_user),
+):
     raw_audio_path = None
     audio_path = None
     try:
@@ -319,15 +496,26 @@ def assess_start_api(
     diarize: str = Form("true"),
     reference_text: Optional[str] = Form(None),
     task_type: Optional[str] = Form(None),
+    user: dict = Depends(require_active_user),
 ):
+    is_diarize = _parse_bool_flag(diarize, default=True)
+    if is_diarize and user.get("role") not in ("teacher", "admin"):
+        return JSONResponse(
+            {
+                "success": False,
+                "error": "Chỉ Giáo viên hoặc Quản trị viên mới được phép chấm điểm hội thoại 2 người (Diarization).",
+            },
+            status_code=403,
+        )
     try:
         return _enqueue_assessment(
             background_tasks,
             audio,
+            owner_id=user["id"],
             teacher_embeddings_json=teacher_embeddings_json,
             student_embeddings_json=student_embeddings_json,
             score_teacher=_parse_bool_flag(score_teacher, default=False),
-            diarize=_parse_bool_flag(diarize, default=True),
+            diarize=is_diarize,
             reference_text=reference_text,
             task_type=task_type,
         )
@@ -341,11 +529,13 @@ def assess_practice_api(
     audio: UploadFile = File(...),
     reference_text: Optional[str] = Form(None),
     task_type: Optional[str] = Form(None),
+    user: dict = Depends(require_active_user),
 ):
     try:
         return _enqueue_assessment(
             background_tasks,
             audio,
+            owner_id=user["id"],
             diarize=False,
             score_teacher=False,
             reference_text=reference_text,
@@ -466,23 +656,48 @@ def process_assessment(
 
 
 @app.get("/assess_status/{task_id}")
-def assess_status(task_id: str):
-    if task_id not in tasks:
+def assess_status(task_id: str, user: dict = Depends(require_active_user)):
+    with _tasks_lock:
+        task = tasks.get(task_id)
+    if task is None:
         return JSONResponse({"success": False, "error": "Task not found"}, status_code=404)
-    return JSONResponse({"success": True, "data": jsonable_encoder(tasks[task_id])})
+    owner_id = task.get("owner_id")
+    if owner_id and owner_id != user["id"] and user.get("role") != "admin":
+        return JSONResponse({"success": False, "error": "Bạn không có quyền xem tiến trình bài chấm của người khác."}, status_code=403)
+    payload = {k: v for k, v in task.items() if k != "owner_id"}
+    return JSONResponse({"success": True, "data": jsonable_encoder(payload)})
 
 
 @app.post("/classroom_analyze_start")
 def classroom_analyze_start_api(
     background_tasks: BackgroundTasks,
     audio: UploadFile = File(...),
-    teacher_embeddings_json: str = Form(...),
+    teacher_embeddings_json: str = Form("[]"),
+    teacher_id: Optional[str] = Form(None),
     teacher_threshold: float = Form(0.40),
     vad_threshold_db: float = Form(-40.0),
+    user: dict = Depends(require_active_user),
 ):
     """Analyze a full classroom recording: Teacher-only diarization + EN/VI word ratio (speech only)."""
+    role = user.get("role")
+    if role not in ("admin", "teacher"):
+        return JSONResponse(
+            {"success": False, "error": "Chỉ Giáo viên hoặc Quản trị viên mới được phép phân tích lớp học."},
+            status_code=403,
+        )
+
+    if role == "teacher" and teacher_id and teacher_id.strip() != str(user["id"]):
+        return JSONResponse(
+            {"success": False, "error": "Giáo viên chỉ được phép phân tích lớp học bằng chính giọng của mình."},
+            status_code=403,
+        )
+
+    raw_emb_source = teacher_embeddings_json
+    if (not raw_emb_source or raw_emb_source.strip() in ("", "[]", "null")) and role == "teacher" and user.get("voice_embeddings"):
+        raw_emb_source = json.dumps(user["voice_embeddings"])
+
     try:
-        teacher_emb = _parse_embedding_json(teacher_embeddings_json)
+        teacher_emb = _parse_embedding_json(raw_emb_source)
     except (json.JSONDecodeError, TypeError, ValueError) as exc:
         return JSONResponse(
             {"success": False, "error": f"teacher_embeddings_json không hợp lệ: {exc}"},
@@ -504,6 +719,7 @@ def classroom_analyze_start_api(
     task_id = str(uuid.uuid4())
     with _tasks_lock:
         tasks[task_id] = {
+            "owner_id": user["id"],
             "status": "processing",
             "task_kind": "classroom_language",
             "step": "Đang tải file audio buổi học lên server...",
@@ -601,10 +817,140 @@ def process_classroom_analysis(
 
 
 @app.get("/classroom_status/{task_id}")
-def classroom_status(task_id: str):
-    if task_id not in tasks:
+def classroom_status(task_id: str, user: dict = Depends(require_active_user)):
+    if user.get("role") not in ("admin", "teacher"):
+        return JSONResponse({"success": False, "error": "Không có quyền truy cập tác vụ phân tích lớp học."}, status_code=403)
+    with _tasks_lock:
+        task = tasks.get(task_id)
+    if task is None:
         return JSONResponse({"success": False, "error": "Task not found"}, status_code=404)
-    return JSONResponse({"success": True, "data": jsonable_encoder(tasks[task_id])})
+    owner_id = task.get("owner_id")
+    if owner_id and owner_id != user["id"] and user.get("role") != "admin":
+        return JSONResponse({"success": False, "error": "Bạn không có quyền xem kết quả phân tích của giáo viên khác."}, status_code=403)
+    payload = {k: v for k, v in task.items() if k != "owner_id"}
+    return JSONResponse({"success": True, "data": jsonable_encoder(payload)})
+
+
+@app.post("/ai_eval")
+async def ai_eval_proxy_api(request: Request, user: dict = Depends(require_active_user)):
+    """Fallback server-side AI Evaluator proxy matching `/api/ai-eval` contract."""
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse({"success": False, "error": "Payload JSON không hợp lệ."}, status_code=400)
+
+    action = str((body or {}).get("action") or "").strip()
+    if action not in ("ping_test", "eval_answer", "eval_conversation"):
+        return JSONResponse({"success": False, "error": f"Action không hợp lệ: {action}"}, status_code=400)
+
+    role = user.get("role")
+    if action == "ping_test" and role != "admin":
+        return JSONResponse({"success": False, "error": "Chỉ Quản trị viên mới được kiểm tra kết nối AI."}, status_code=403)
+    if action == "eval_conversation" and role not in ("teacher", "admin"):
+        return JSONResponse({"success": False, "error": "Chỉ Giáo viên hoặc Quản trị viên mới được đánh giá hội thoại 1-1."}, status_code=403)
+
+    supabase_url, anon_key = get_supabase_config()
+    svc_url, service_key = get_supabase_service_config()
+    base_url = svc_url or supabase_url
+    gs_row = None
+
+    if base_url and (service_key or (role == "admin" and user.get("token"))):
+        hdr_apikey = service_key or anon_key
+        hdr_bearer = service_key or user.get("token")
+        try:
+            gs_resp = requests.get(
+                f"{base_url}/rest/v1/global_settings",
+                params={"id": "eq.1", "select": "gemini_api_key,gemini_api_url,gemini_model", "limit": "1"},
+                headers={"apikey": hdr_apikey, "Authorization": f"Bearer {hdr_bearer}"},
+                timeout=10,
+            )
+            if gs_resp.status_code == 200:
+                rows = gs_resp.json()
+                gs_row = rows[0] if isinstance(rows, list) and rows else None
+        except Exception:
+            gs_row = None
+
+    endpoint = str((gs_row or {}).get("gemini_api_url") or DEFAULT_GEMINI_ENDPOINT).strip()
+    model = str((gs_row or {}).get("gemini_model") or DEFAULT_GEMINI_MODEL).strip()
+    stored_key = str((gs_row or {}).get("gemini_api_key") or get_gemini_api_key() or "").strip()
+
+    if action == "ping_test":
+        draft = (body or {}).get("draftConfig")
+        if not isinstance(draft, dict):
+            draft = {}
+        test_key = str(draft.get("apiKey") or stored_key or "").strip()
+        test_url = str(draft.get("apiUrl") or endpoint).strip()
+        test_model = str(draft.get("model") or model).strip()
+        if not test_key:
+            return JSONResponse({"success": False, "error": "Chưa có AI API Key để kiểm tra."}, status_code=400)
+        try:
+            ai_resp = requests.post(
+                test_url,
+                headers={
+                    "Content-Type": "application/json",
+                    "Authorization": f"Bearer {test_key}",
+                    "x-api-key": test_key,
+                },
+                json={
+                    "model": test_model,
+                    "messages": [{"role": "user", "content": 'Ping test. Reply with "OK".'}],
+                    "max_tokens": 10,
+                },
+                timeout=20,
+            )
+            if not ai_resp.ok:
+                return JSONResponse(
+                    {"success": False, "error": f"API Lỗi HTTP {ai_resp.status_code}: {ai_resp.text[:200]}"},
+                    status_code=502,
+                )
+            data = ai_resp.json()
+            reply = str((((data.get("choices") or [{}])[0].get("message") or {}).get("content")) or "").strip()
+            return JSONResponse({"success": True, "model": data.get("model") or test_model, "reply": reply})
+        except Exception as exc:
+            return JSONResponse({"success": False, "error": f"Không kết nối được AI API: {exc}"}, status_code=502)
+
+    if not stored_key:
+        return JSONResponse(
+            {"success": False, "code": "AI_KEY_MISSING", "error": "Chưa cấu hình AI API Key trên hệ thống."},
+            status_code=503,
+        )
+
+    raw_messages = (body or {}).get("messages")
+    if not isinstance(raw_messages, list) or not (1 <= len(raw_messages) <= 2):
+        return JSONResponse({"success": False, "error": "Danh sách messages không hợp lệ."}, status_code=400)
+    safe_messages = []
+    for msg in raw_messages:
+        if not isinstance(msg, dict) or msg.get("role") not in ("system", "user") or msg.get("content") is None:
+            return JSONResponse({"success": False, "error": "Cấu trúc message không hợp lệ."}, status_code=400)
+        safe_messages.append({"role": msg["role"], "content": msg["content"]})
+
+    try:
+        temp_val = float((body or {}).get("temperature", 0.2))
+    except (TypeError, ValueError):
+        temp_val = 0.2
+    temp_val = max(0.0, min(1.0, temp_val))
+
+    try:
+        upstream_resp = requests.post(
+            endpoint,
+            headers={
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {stored_key}",
+                "x-api-key": stored_key,
+            },
+            json={"model": model, "messages": safe_messages, "temperature": temp_val},
+            timeout=30,
+        )
+        if not upstream_resp.ok:
+            return JSONResponse(
+                {"success": False, "error": f"Upstream AI API HTTP {upstream_resp.status_code}: {upstream_resp.text[:200]}"},
+                status_code=502,
+            )
+        data = upstream_resp.json()
+        content = str((((data.get("choices") or [{}])[0].get("message") or {}).get("content")) or "")
+        return JSONResponse({"success": True, "content": content, "model": data.get("model") or model})
+    except Exception as exc:
+        return JSONResponse({"success": False, "error": f"Lỗi gọi Upstream AI API: {exc}"}, status_code=502)
 
 
 @app.get("/health")
