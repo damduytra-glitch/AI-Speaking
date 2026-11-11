@@ -28,8 +28,11 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="vi" className={inter.variable}>
-      <body className="min-h-screen bg-[#F8FAFC] text-slate-900 antialiased selection:bg-indigo-100 selection:text-indigo-900">
+    <html lang="vi" className={inter.variable} suppressHydrationWarning>
+      <body
+        className="min-h-screen bg-[#F8FAFC] text-slate-900 antialiased selection:bg-indigo-100 selection:text-indigo-900"
+        suppressHydrationWarning
+      >
         <ToastProvider>{children}</ToastProvider>
       </body>
     </html>
