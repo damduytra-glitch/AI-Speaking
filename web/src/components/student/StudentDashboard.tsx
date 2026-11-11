@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   AlertTriangle,
   Award,
@@ -22,14 +22,15 @@ import {
 import {
   cancelSession,
   fetchActiveSession,
-  fetchPublishedSets,
-  fetchSessionHistory,
+  fetchPublishedSetsPage,
+  fetchSessionHistoryPage,
   fetchSetWithQuestions,
 } from '@/lib/practice';
 import {
-  computeStudentDashboardStats,
-  fetchStudentAssessments,
+  fetchStudentAssessmentsPage,
+  fetchStudentOverviewData,
   fetchStudentProfile,
+  type StudentOverviewData,
 } from '@/lib/student';
 import {
   formatScoreValue,
@@ -39,6 +40,7 @@ import {
   scoreBadgeBgClass,
 } from '@/lib/utils';
 import { Modal } from '@/components/ui/Modal';
+import { Pagination } from '@/components/ui/Pagination';
 import {
   PageHeader,
   ScoreTrendChart,
@@ -67,6 +69,9 @@ interface StudentDashboardProps {
   onPracticeGuardChange: (active: boolean) => void;
 }
 
+const SETS_PAGE_SIZE = 9;
+const RESULTS_PAGE_SIZE = 8;
+
 export function StudentDashboard({
   currentUser,
   activeTab,
@@ -76,16 +81,25 @@ export function StudentDashboard({
 }: StudentDashboardProps) {
   const { showToast } = useToast();
 
-  const [loading, setLoading] = useState(true);
+  // Teacher info (used in overview + results fallback)
   const [teacherInfo, setTeacherInfo] = useState<TeacherBasicInfo | null>(null);
-  const [publishedSets, setPublishedSets] = useState<QuestionSet[]>([]);
-  const [sessions, setSessions] = useState<PracticeSession[]>([]);
-  const [assessments, setAssessments] = useState<Assessment[]>([]);
 
-  // Filters on Practice catalog
+  // Overview state
+  const [overviewLoading, setOverviewLoading] = useState(false);
+  const [overviewData, setOverviewData] = useState<StudentOverviewData | null>(null);
+
+  // Practice catalog (server-paginated)
   const [setSearch, setSetSearch] = useState('');
+  const [debouncedSetSearch, setDebouncedSetSearch] = useState('');
   const [examFilter, setExamFilter] = useState('');
   const [levelFilter, setLevelFilter] = useState('');
+  const [setsPage, setSetsPage] = useState(1);
+  const [setsData, setSetsData] = useState<{ items: QuestionSet[]; total: number }>({
+    items: [],
+    total: 0,
+  });
+  const [setsLoading, setSetsLoading] = useState(false);
+  const setsReqSeq = useRef(0);
 
   // Mode Select & Resume Modals
   const [modeModalSet, setModeModalSet] = useState<(QuestionSet & { questions: Question[] }) | null>(
@@ -104,46 +118,181 @@ export function StudentDashboard({
     initialSession: PracticeSession | null;
   } | null>(null);
 
-  // Results tab (Merged Practice/Exam + 1-1 Assessments)
+  // Results tab (server-paginated Practice/Exam + 1-1 Assessments)
   const [resultsTab, setResultsTab] = useState<'practice' | 'assess'>('practice');
   const [resultsModeFilter, setResultsModeFilter] = useState<'all' | 'practice' | 'exam'>('all');
   const [resultsSearch, setResultsSearch] = useState('');
+  const [debouncedResultsSearch, setDebouncedResultsSearch] = useState('');
+  const [sessionsPage, setSessionsPage] = useState(1);
+  const [sessionsData, setSessionsData] = useState<{ items: PracticeSession[]; total: number }>({
+    items: [],
+    total: 0,
+  });
+  const [sessionsLoading, setSessionsLoading] = useState(false);
+  const sessionsReqSeq = useRef(0);
+
+  const [assessmentsPage, setAssessmentsPage] = useState(1);
+  const [assessmentsData, setAssessmentsData] = useState<{ items: Assessment[]; total: number }>({
+    items: [],
+    total: 0,
+  });
+  const [assessmentsLoading, setAssessmentsLoading] = useState(false);
+  const assessmentsReqSeq = useRef(0);
+
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
   const [selectedAssessment, setSelectedAssessment] = useState<Assessment | null>(null);
 
-  const loadStudentData = useCallback(async () => {
-    setLoading(true);
+  // ── Profile teacher info ───────────────────────────────────────────────────
+  useEffect(() => {
+    if (activeTab !== 'overview' && activeTab !== 'results') return;
+    let cancelled = false;
+    fetchStudentProfile(currentUser.id)
+      .then((res) => {
+        if (!cancelled && res.teacher) setTeacherInfo(res.teacher);
+      })
+      .catch(() => {
+        // ignore teacher fetch error
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [activeTab, currentUser.id]);
+
+  // ── Overview Loader ────────────────────────────────────────────────────────
+  const loadOverview = useCallback(async () => {
+    setOverviewLoading(true);
     try {
-      const [profileWithTeacher, pubSets, sessHist, assessHist] = await Promise.all([
-        fetchStudentProfile(currentUser.id).catch(() => null),
-        fetchPublishedSets().catch(() => []),
-        fetchSessionHistory(currentUser.id).catch(() => []),
-        fetchStudentAssessments(currentUser.id).catch(() => []),
-      ]);
-      if (profileWithTeacher?.teacher) setTeacherInfo(profileWithTeacher.teacher);
-      setPublishedSets(pubSets);
-      setSessions(sessHist);
-      setAssessments(assessHist);
+      const data = await fetchStudentOverviewData(currentUser.id);
+      setOverviewData(data);
     } catch (err) {
-      showToast(err instanceof Error ? err.message : 'Lỗi tải dữ liệu học tập', 'danger');
+      showToast(err instanceof Error ? err.message : 'Lỗi tải tổng quan học tập', 'danger');
     } finally {
-      setLoading(false);
+      setOverviewLoading(false);
     }
   }, [currentUser.id, showToast]);
 
   useEffect(() => {
-    loadStudentData();
-  }, [loadStudentData]);
+    if (activeTab === 'overview') {
+      loadOverview();
+    }
+  }, [activeTab, loadOverview]);
 
-  const stats = useMemo(
-    () => computeStudentDashboardStats(assessments, sessions),
-    [assessments, sessions],
-  );
+  // ── Debounce filters ───────────────────────────────────────────────────────
+  useEffect(() => {
+    const t = window.setTimeout(() => {
+      setDebouncedSetSearch(setSearch);
+      setSetsPage(1);
+    }, 300);
+    return () => window.clearTimeout(t);
+  }, [setSearch]);
 
-  // Chronological Trend Data (real completed sessions + 1-1 assessments)
+  useEffect(() => {
+    const t = window.setTimeout(() => {
+      setDebouncedResultsSearch(resultsSearch);
+      setSessionsPage(1);
+    }, 300);
+    return () => window.clearTimeout(t);
+  }, [resultsSearch]);
+
+  // ── Practice Catalog Paginated Loader ──────────────────────────────────────
+  const loadPublishedSetsPage = useCallback(async () => {
+    const seq = ++setsReqSeq.current;
+    setSetsLoading(true);
+    try {
+      const res = await fetchPublishedSetsPage({
+        page: setsPage,
+        pageSize: SETS_PAGE_SIZE,
+        search: debouncedSetSearch,
+        examType: examFilter,
+        level: levelFilter,
+      });
+      if (seq !== setsReqSeq.current) return;
+      if (res.items.length === 0 && setsPage > 1 && res.total > 0) {
+        setSetsPage(setsPage - 1);
+        return;
+      }
+      setSetsData({ items: res.items, total: res.total });
+    } catch (err) {
+      if (seq === setsReqSeq.current) {
+        showToast(err instanceof Error ? err.message : 'Lỗi tải kho bộ đề', 'danger');
+      }
+    } finally {
+      if (seq === setsReqSeq.current) setSetsLoading(false);
+    }
+  }, [setsPage, debouncedSetSearch, examFilter, levelFilter, showToast]);
+
+  useEffect(() => {
+    if (activeTab === 'practice' && !activeRunner) {
+      loadPublishedSetsPage();
+    }
+  }, [activeTab, activeRunner, loadPublishedSetsPage]);
+
+  // ── Results Sub-tabs Paginated Loaders ─────────────────────────────────────
+  const loadSessionsPage = useCallback(async () => {
+    const seq = ++sessionsReqSeq.current;
+    setSessionsLoading(true);
+    try {
+      const res = await fetchSessionHistoryPage(currentUser.id, {
+        page: sessionsPage,
+        pageSize: RESULTS_PAGE_SIZE,
+        search: debouncedResultsSearch,
+        mode: resultsModeFilter,
+      });
+      if (seq !== sessionsReqSeq.current) return;
+      if (res.items.length === 0 && sessionsPage > 1 && res.total > 0) {
+        setSessionsPage(sessionsPage - 1);
+        return;
+      }
+      setSessionsData({ items: res.items, total: res.total });
+    } catch (err) {
+      if (seq === sessionsReqSeq.current) {
+        showToast(err instanceof Error ? err.message : 'Lỗi tải lịch sử luyện tập', 'danger');
+      }
+    } finally {
+      if (seq === sessionsReqSeq.current) setSessionsLoading(false);
+    }
+  }, [currentUser.id, sessionsPage, debouncedResultsSearch, resultsModeFilter, showToast]);
+
+  const loadAssessmentsPage = useCallback(async () => {
+    const seq = ++assessmentsReqSeq.current;
+    setAssessmentsLoading(true);
+    try {
+      const res = await fetchStudentAssessmentsPage(currentUser.id, {
+        page: assessmentsPage,
+        pageSize: RESULTS_PAGE_SIZE,
+      });
+      if (seq !== assessmentsReqSeq.current) return;
+      if (res.items.length === 0 && assessmentsPage > 1 && res.total > 0) {
+        setAssessmentsPage(assessmentsPage - 1);
+        return;
+      }
+      setAssessmentsData({ items: res.items, total: res.total });
+    } catch (err) {
+      if (seq === assessmentsReqSeq.current) {
+        showToast(err instanceof Error ? err.message : 'Lỗi tải kết quả hội thoại 1-1', 'danger');
+      }
+    } finally {
+      if (seq === assessmentsReqSeq.current) setAssessmentsLoading(false);
+    }
+  }, [currentUser.id, assessmentsPage, showToast]);
+
+  useEffect(() => {
+    if (activeTab === 'results') {
+      loadSessionsPage();
+    }
+  }, [activeTab, loadSessionsPage]);
+
+  useEffect(() => {
+    if (activeTab === 'results') {
+      loadAssessmentsPage();
+    }
+  }, [activeTab, loadAssessmentsPage]);
+
+  // ── Chronological Trend Data from Overview ─────────────────────────────────
   const trendData = useMemo<ScoreTrendPoint[]>(() => {
+    if (!overviewData) return [];
     const items = [
-      ...sessions
+      ...overviewData.trendSourceSessions
         .filter((s) => s.score_total != null)
         .map((s) => ({
           id: `s-${s.id}`,
@@ -156,7 +305,7 @@ export function StudentDashboard({
           score: Number(s.score_total || 0),
           kind: s.mode === 'exam' ? 'Thi thử' : 'Luyện tập',
         })),
-      ...assessments
+      ...overviewData.trendSourceAssessments
         .filter((a) => a.score_total != null)
         .map((a) => ({
           id: `a-${a.id}`,
@@ -174,61 +323,9 @@ export function StudentDashboard({
       .slice(-12);
 
     return items;
-  }, [sessions, assessments]);
+  }, [overviewData]);
 
-  // 4-Skill Radar Data (real averages)
-  const skillMetrics = useMemo(() => {
-    const allRows = [
-      ...sessions.map((s) => ({
-        acc: s.score_accuracy ?? s.score_total,
-        ctx: s.score_context,
-        lex: s.score_lexical,
-        gra: s.score_grammar,
-      })),
-      ...assessments.map((a) => ({
-        acc: a.score_accuracy ?? a.score_total,
-        ctx: a.score_context,
-        lex: a.score_lexical ?? a.result_json?.score_lexical,
-        gra: a.score_grammar,
-      })),
-    ];
-
-    const avgOf = (vals: number[]) =>
-      vals.length > 0 ? vals.reduce((s, v) => s + v, 0) / vals.length : null;
-
-    return {
-      acc: avgOf(allRows.filter((r) => r.acc != null).map((r) => Number(r.acc))),
-      ctx: avgOf(allRows.filter((r) => r.ctx != null).map((r) => Number(r.ctx))),
-      lex: avgOf(allRows.filter((r) => r.lex != null).map((r) => Number(r.lex))),
-      gra: avgOf(allRows.filter((r) => r.gra != null).map((r) => Number(r.gra))),
-    };
-  }, [sessions, assessments]);
-
-  const filteredSets = useMemo(() => {
-    const q = setSearch.trim().toLowerCase();
-    return publishedSets.filter((qs) => {
-      if (examFilter && qs.exam_type !== examFilter) return false;
-      if (levelFilter && qs.level !== levelFilter) return false;
-      if (
-        q &&
-        !qs.title.toLowerCase().includes(q) &&
-        !(qs.teacher_name || '').toLowerCase().includes(q)
-      ) {
-        return false;
-      }
-      return true;
-    });
-  }, [publishedSets, setSearch, examFilter, levelFilter]);
-
-  const filteredSessions = useMemo(() => {
-    const q = resultsSearch.trim().toLowerCase();
-    return sessions.filter((s) => {
-      if (resultsModeFilter !== 'all' && s.mode !== resultsModeFilter) return false;
-      if (q && !(s.question_set?.title || '').toLowerCase().includes(q)) return false;
-      return true;
-    });
-  }, [sessions, resultsModeFilter, resultsSearch]);
-
+  // ── Question Set Launching ─────────────────────────────────────────────────
   const handleOpenQuestionSet = async (qs: QuestionSet) => {
     setLoadingSetDetail(true);
     try {
@@ -294,7 +391,7 @@ export function StudentDashboard({
 
   const voiceReady = hasVoiceEnrolled(currentUser);
 
-  if (loading && publishedSets.length === 0 && sessions.length === 0) {
+  if (activeTab === 'overview' && overviewLoading && !overviewData) {
     return (
       <div className="flex flex-col items-center justify-center py-20 text-slate-500">
         <Loader2 className="mb-3 h-8 w-8 animate-spin text-indigo-600" />
@@ -312,20 +409,36 @@ export function StudentDashboard({
         initialSession={activeRunner.initialSession}
         gpuUrl={gpuUrl}
         onSessionGuardChange={onPracticeGuardChange}
-        onFinished={async () => {
+        onFinished={() => {
           setActiveRunner(null);
           onPracticeGuardChange(false);
-          await loadStudentData();
           onNavigate('results');
         }}
         onExit={async () => {
           setActiveRunner(null);
           onPracticeGuardChange(false);
-          await loadStudentData();
+          await loadPublishedSetsPage();
         }}
       />
     );
   }
+
+  const stats = overviewData?.stats ?? {
+    totalCompleted: 0,
+    practiceCount: 0,
+    assessCount: 0,
+    avgTotal: '0.0',
+    avgPR: '0.0',
+    avgFC: '0.0',
+  };
+  const skillMetrics = overviewData?.skillMetrics ?? {
+    acc: null,
+    ctx: null,
+    lex: null,
+    gra: null,
+  };
+  const recentSessions = overviewData?.recentSessions || [];
+  const recentAssessments = overviewData?.recentAssessments || [];
 
   return (
     <div className="space-y-6">
@@ -504,13 +617,13 @@ export function StudentDashboard({
                 </button>
               </div>
 
-              {sessions.length === 0 && assessments.length === 0 ? (
+              {recentSessions.length === 0 && recentAssessments.length === 0 ? (
                 <p className="py-6 text-center text-xs text-slate-500">
                   Chưa có kết quả học tập nào. Hãy vào mục Luyện Speaking để bắt đầu bài đầu tiên!
                 </p>
               ) : (
                 <div className="space-y-2.5">
-                  {sessions.slice(0, 3).map((s) => (
+                  {recentSessions.map((s) => (
                     <button
                       key={s.id}
                       type="button"
@@ -534,7 +647,7 @@ export function StudentDashboard({
                       </span>
                     </button>
                   ))}
-                  {assessments.slice(0, 2).map((a) => (
+                  {recentAssessments.map((a) => (
                     <AssessmentCard
                       key={a.id}
                       assessment={a}
@@ -549,14 +662,14 @@ export function StudentDashboard({
         </div>
       )}
 
-      {/* TAB 2: PRACTICE & EXAM CATALOG */}
+      {/* TAB 2: PRACTICE & EXAM CATALOG (SERVER-PAGINATED) */}
       {activeTab === 'practice' && (
         <div className="space-y-6">
           <PageHeader
             eyebrow="LUYỆN TẬP & THI THỬ"
             title="Kho Bộ đề Speaking"
             subtitle="Chọn bộ đề để luyện từng câu nhận phản hồi AI ngay hoặc thi thử bấm giờ."
-            pill={<span>{filteredSets.length} bộ đề khả dụng</span>}
+            pill={<span>{setsData.total} bộ đề khả dụng</span>}
           />
 
           <div className="section-card grid gap-3 sm:grid-cols-3">
@@ -573,7 +686,10 @@ export function StudentDashboard({
 
             <select
               value={examFilter}
-              onChange={(e) => setExamFilter(e.target.value)}
+              onChange={(e) => {
+                setExamFilter(e.target.value);
+                setSetsPage(1);
+              }}
               className="rounded-xl border border-slate-200 bg-slate-50/80 px-3 py-2.5 text-sm text-slate-900 focus:border-indigo-500 focus:bg-white focus:outline-none"
             >
               <option value="">Tất cả định dạng</option>
@@ -585,7 +701,10 @@ export function StudentDashboard({
 
             <select
               value={levelFilter}
-              onChange={(e) => setLevelFilter(e.target.value)}
+              onChange={(e) => {
+                setLevelFilter(e.target.value);
+                setSetsPage(1);
+              }}
               className="rounded-xl border border-slate-200 bg-slate-50/80 px-3 py-2.5 text-sm text-slate-900 focus:border-indigo-500 focus:bg-white focus:outline-none"
             >
               <option value="">Mọi trình độ</option>
@@ -595,56 +714,76 @@ export function StudentDashboard({
             </select>
           </div>
 
-          {filteredSets.length === 0 ? (
+          {setsLoading && setsData.items.length === 0 ? (
+            <div className="section-card flex items-center justify-center py-12 text-slate-500">
+              <Loader2 className="mr-2 h-5 w-5 animate-spin text-indigo-600" />
+              <span className="text-sm">Đang tải danh sách bộ đề...</span>
+            </div>
+          ) : setsData.items.length === 0 ? (
             <div className="section-card py-12 text-center text-sm text-slate-500">
               Hiện chưa có bộ đề nào phù hợp với bộ lọc.
             </div>
           ) : (
-            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-              {filteredSets.map((qs) => (
-                <div
-                  key={qs.id}
-                  className="section-card card-interactive flex flex-col justify-between gap-4"
-                >
-                  <div className="space-y-2.5">
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <span className="rounded-full border border-indigo-200 bg-indigo-50 px-2.5 py-0.5 text-[11px] font-semibold text-indigo-700">
-                        {getExamTypeName(qs.exam_type)}
-                      </span>
-                      <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-0.5 text-[11px] font-medium text-slate-600">
-                        {qs.question_count || 0} câu
-                      </span>
-                    </div>
-
-                    <h3 className="text-base font-bold text-slate-900 line-clamp-2">{qs.title}</h3>
-                    {qs.description && (
-                      <p className="text-xs text-slate-500 line-clamp-2">{qs.description}</p>
-                    )}
-
-                    <div className="text-[11px] text-slate-500 pt-1">
-                      Trình độ:{' '}
-                      <strong className="text-slate-800">{getLevelLabel(qs.level)}</strong> · GV:{' '}
-                      <strong className="text-slate-800">{qs.teacher_name || 'Giáo viên'}</strong>
-                    </div>
-                  </div>
-
-                  <button
-                    type="button"
-                    disabled={loadingSetDetail}
-                    onClick={() => handleOpenQuestionSet(qs)}
-                    className="btn-glow inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-indigo-600 px-4 py-2.5 text-xs font-bold text-white shadow-md shadow-indigo-600/20 hover:bg-indigo-500 disabled:opacity-50 transition"
+            <>
+              <div
+                className={`grid gap-4 md:grid-cols-2 xl:grid-cols-3 ${
+                  setsLoading ? 'opacity-60' : ''
+                }`}
+              >
+                {setsData.items.map((qs) => (
+                  <div
+                    key={qs.id}
+                    className="section-card card-interactive flex flex-col justify-between gap-4"
                   >
-                    <Play className="h-3.5 w-3.5" />
-                    Bắt đầu Học / Thi thử
-                  </button>
-                </div>
-              ))}
-            </div>
+                    <div className="space-y-2.5">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <span className="rounded-full border border-indigo-200 bg-indigo-50 px-2.5 py-0.5 text-[11px] font-semibold text-indigo-700">
+                          {getExamTypeName(qs.exam_type)}
+                        </span>
+                        <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-0.5 text-[11px] font-medium text-slate-600">
+                          {qs.question_count || 0} câu
+                        </span>
+                      </div>
+
+                      <h3 className="text-base font-bold text-slate-900 line-clamp-2">{qs.title}</h3>
+                      {qs.description && (
+                        <p className="text-xs text-slate-500 line-clamp-2">{qs.description}</p>
+                      )}
+
+                      <div className="text-[11px] text-slate-500 pt-1">
+                        Trình độ:{' '}
+                        <strong className="text-slate-800">{getLevelLabel(qs.level)}</strong> · GV:{' '}
+                        <strong className="text-slate-800">{qs.teacher_name || 'Giáo viên'}</strong>
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      disabled={loadingSetDetail}
+                      onClick={() => handleOpenQuestionSet(qs)}
+                      className="btn-glow inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-indigo-600 px-4 py-2.5 text-xs font-bold text-white shadow-md shadow-indigo-600/20 hover:bg-indigo-500 disabled:opacity-50 transition"
+                    >
+                      <Play className="h-3.5 w-3.5" />
+                      Bắt đầu Học / Thi thử
+                    </button>
+                  </div>
+                ))}
+              </div>
+
+              <Pagination
+                page={setsPage}
+                pageSize={SETS_PAGE_SIZE}
+                totalCount={setsData.total}
+                onPageChange={setSetsPage}
+                disabled={setsLoading}
+                itemLabel="bộ đề"
+              />
+            </>
           )}
         </div>
       )}
 
-      {/* TAB 3: MERGED RESULTS MODULE (Practice/Exam + 1-1 Assessments) */}
+      {/* TAB 3: MERGED RESULTS MODULE (Practice/Exam + 1-1 Assessments, PAGINATED) */}
       {activeTab === 'results' && (
         <div className="space-y-6">
           <PageHeader
@@ -662,7 +801,7 @@ export function StudentDashboard({
                       : 'text-slate-600 hover:text-slate-900'
                   }`}
                 >
-                  Luyện tập &amp; Thi thử ({sessions.length})
+                  Luyện tập &amp; Thi thử ({sessionsData.total})
                 </button>
                 <button
                   type="button"
@@ -673,7 +812,7 @@ export function StudentDashboard({
                       : 'text-slate-600 hover:text-slate-900'
                   }`}
                 >
-                  Hội thoại 1-1 ({assessments.length})
+                  Hội thoại 1-1 ({assessmentsData.total})
                 </button>
               </div>
             }
@@ -695,9 +834,10 @@ export function StudentDashboard({
                   </div>
                   <select
                     value={resultsModeFilter}
-                    onChange={(e) =>
-                      setResultsModeFilter(e.target.value as 'all' | 'practice' | 'exam')
-                    }
+                    onChange={(e) => {
+                      setResultsModeFilter(e.target.value as 'all' | 'practice' | 'exam');
+                      setSessionsPage(1);
+                    }}
                     className="rounded-xl border border-slate-200 bg-slate-50/80 px-3 py-2.5 text-sm text-slate-900 focus:border-indigo-500 focus:bg-white focus:outline-none"
                   >
                     <option value="all">Tất cả hình thức</option>
@@ -706,74 +846,110 @@ export function StudentDashboard({
                   </select>
                 </div>
 
-                {filteredSessions.length === 0 ? (
+                {sessionsLoading && sessionsData.items.length === 0 ? (
+                  <div className="section-card flex items-center justify-center py-12 text-slate-500">
+                    <Loader2 className="mr-2 h-5 w-5 animate-spin text-indigo-600" />
+                    <span className="text-sm">Đang tải lịch sử bài làm...</span>
+                  </div>
+                ) : sessionsData.items.length === 0 ? (
                   <div className="section-card py-12 text-center text-sm text-slate-500">
                     Chưa có bài Luyện tập hoặc Thi thử nào hoàn thành.
                   </div>
                 ) : (
-                  <div className="space-y-3">
-                    {filteredSessions.map((s) => (
-                      <button
-                        key={s.id}
-                        type="button"
-                        onClick={() => setSelectedSessionId(s.id)}
-                        className="section-card card-interactive flex w-full flex-wrap items-center justify-between gap-4 text-left"
-                      >
-                        <div className="min-w-0 flex-1 space-y-1">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <span className="text-base font-bold text-slate-900">
-                              {s.question_set?.title || 'Bộ đề Speaking'}
-                            </span>
-                            <span
-                              className={`rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${
-                                s.mode === 'exam'
-                                  ? 'border border-violet-200 bg-violet-50 text-violet-700'
-                                  : 'border border-sky-200 bg-sky-50 text-sky-700'
-                              }`}
-                            >
-                              {s.mode === 'exam' ? s.exam_band || 'Thi thử' : 'Luyện tập'}
-                            </span>
-                            {s.status === 'reviewed' && (
-                              <span className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-0.5 text-[11px] font-semibold text-emerald-700">
-                                <CheckCircle2 className="h-3 w-3" /> GV đã duyệt
+                  <>
+                    <div className={`space-y-3 ${sessionsLoading ? 'opacity-60' : ''}`}>
+                      {sessionsData.items.map((s) => (
+                        <button
+                          key={s.id}
+                          type="button"
+                          onClick={() => setSelectedSessionId(s.id)}
+                          className="section-card card-interactive flex w-full flex-wrap items-center justify-between gap-4 text-left"
+                        >
+                          <div className="min-w-0 flex-1 space-y-1">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className="text-base font-bold text-slate-900">
+                                {s.question_set?.title || 'Bộ đề Speaking'}
                               </span>
+                              <span
+                                className={`rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${
+                                  s.mode === 'exam'
+                                    ? 'border border-violet-200 bg-violet-50 text-violet-700'
+                                    : 'border border-sky-200 bg-sky-50 text-sky-700'
+                                }`}
+                              >
+                                {s.mode === 'exam' ? s.exam_band || 'Thi thử' : 'Luyện tập'}
+                              </span>
+                              {s.status === 'reviewed' && (
+                                <span className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-0.5 text-[11px] font-semibold text-emerald-700">
+                                  <CheckCircle2 className="h-3 w-3" /> GV đã duyệt
+                                </span>
+                              )}
+                            </div>
+                            <div className="text-xs text-slate-500">
+                              {new Date(s.completed_at || s.started_at).toLocaleString('vi-VN')}
+                            </div>
+                            {s.teacher_comment && (
+                              <div className="mt-1 inline-flex items-center gap-1.5 rounded-xl border border-sky-200 bg-sky-50 px-2.5 py-1 text-xs text-sky-800">
+                                <MessageSquareHeart className="h-3.5 w-3.5 text-sky-600" />
+                                &ldquo;{s.teacher_comment}&rdquo;
+                              </div>
                             )}
                           </div>
-                          <div className="text-xs text-slate-500">
-                            {new Date(s.completed_at || s.started_at).toLocaleString('vi-VN')}
-                          </div>
-                          {s.teacher_comment && (
-                            <div className="mt-1 inline-flex items-center gap-1.5 rounded-xl border border-sky-200 bg-sky-50 px-2.5 py-1 text-xs text-sky-800">
-                              <MessageSquareHeart className="h-3.5 w-3.5 text-sky-600" />
-                              &ldquo;{s.teacher_comment}&rdquo;
-                            </div>
-                          )}
-                        </div>
 
-                        <div
-                          className={`rounded-2xl border px-4 py-2 text-lg font-extrabold tabular-nums ${scoreBadgeBgClass(s.score_total)}`}
-                        >
-                          {formatScoreValue(s.score_total)}
-                        </div>
-                      </button>
-                    ))}
-                  </div>
+                          <div
+                            className={`rounded-2xl border px-4 py-2 text-lg font-extrabold tabular-nums ${scoreBadgeBgClass(s.score_total)}`}
+                          >
+                            {formatScoreValue(s.score_total)}
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+
+                    <Pagination
+                      page={sessionsPage}
+                      pageSize={RESULTS_PAGE_SIZE}
+                      totalCount={sessionsData.total}
+                      onPageChange={setSessionsPage}
+                      disabled={sessionsLoading}
+                      itemLabel="bài làm"
+                    />
+                  </>
                 )}
               </div>
-            ) : assessments.length === 0 ? (
+            ) : assessmentsLoading && assessmentsData.items.length === 0 ? (
+              <div className="section-card flex items-center justify-center py-12 text-slate-500">
+                <Loader2 className="mr-2 h-5 w-5 animate-spin text-indigo-600" />
+                <span className="text-sm">Đang tải danh sách buổi chấm 1-1...</span>
+              </div>
+            ) : assessmentsData.items.length === 0 ? (
               <div className="section-card py-12 text-center text-sm text-slate-500">
                 Bạn chưa có buổi chấm Hội thoại 1-1 nào từ Giáo viên.
               </div>
             ) : (
-              <div className="grid gap-3 lg:grid-cols-2">
-                {assessments.map((a) => (
-                  <AssessmentCard
-                    key={a.id}
-                    assessment={a}
-                    fallbackTeacherName={teacherInfo?.full_name || 'Giáo viên phụ trách'}
-                    onSelect={setSelectedAssessment}
-                  />
-                ))}
+              <div className="space-y-4">
+                <div
+                  className={`grid gap-3 lg:grid-cols-2 ${
+                    assessmentsLoading ? 'opacity-60' : ''
+                  }`}
+                >
+                  {assessmentsData.items.map((a) => (
+                    <AssessmentCard
+                      key={a.id}
+                      assessment={a}
+                      fallbackTeacherName={teacherInfo?.full_name || 'Giáo viên phụ trách'}
+                      onSelect={setSelectedAssessment}
+                    />
+                  ))}
+                </div>
+
+                <Pagination
+                  page={assessmentsPage}
+                  pageSize={RESULTS_PAGE_SIZE}
+                  totalCount={assessmentsData.total}
+                  onPageChange={setAssessmentsPage}
+                  disabled={assessmentsLoading}
+                  itemLabel="buổi chấm"
+                />
               </div>
             )}
           </div>

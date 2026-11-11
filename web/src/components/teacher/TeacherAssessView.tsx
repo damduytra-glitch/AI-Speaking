@@ -19,7 +19,7 @@ import { evaluateConversationWithAi } from '@/lib/aiEval';
 import {
   createAssessment,
   deleteAssessment,
-  fetchSavedAssessments,
+  fetchSavedAssessmentsPage,
   saveAssessment,
   uploadAudioUrlToSupabase,
   uploadConversationAudio,
@@ -31,6 +31,8 @@ import {
   hasVoiceEnrolled,
   parseVoiceEmbeddings,
 } from '@/lib/utils';
+import { Modal } from '@/components/ui/Modal';
+import { Pagination } from '@/components/ui/Pagination';
 import { useToast } from '@/components/ToastProvider';
 import {
   PageHeader,
@@ -55,6 +57,8 @@ interface TeacherAssessViewProps {
   onNavigateProfile: () => void;
   onChanged?: () => void;
 }
+
+const HISTORY_PAGE_SIZE = 8;
 
 export function TeacherAssessView({
   currentUser,
@@ -84,23 +88,51 @@ export function TeacherAssessView({
   const [customTitle, setCustomTitle] = useState('');
   const [savingResult, setSavingResult] = useState(false);
 
-  // History State
-  const [savedList, setSavedList] = useState<Assessment[]>([]);
+  // History State (server-paginated)
+  const [historyData, setHistoryData] = useState<{ items: Assessment[]; total: number }>({
+    items: [],
+    total: 0,
+  });
+  const [historyPage, setHistoryPage] = useState(1);
   const [loadingHistory, setLoadingHistory] = useState(false);
   const [historySearch, setHistorySearch] = useState('');
+  const [debouncedHistorySearch, setDebouncedHistorySearch] = useState('');
+  const historyReqSeq = useRef(0);
   const [detailAssessment, setDetailAssessment] = useState<Assessment | null>(null);
+  const [deletingAssessment, setDeletingAssessment] = useState<Assessment | null>(null);
+  const [deletingBusy, setDeletingBusy] = useState(false);
+
+  useEffect(() => {
+    const t = window.setTimeout(() => {
+      setDebouncedHistorySearch(historySearch);
+      setHistoryPage(1);
+    }, 300);
+    return () => window.clearTimeout(t);
+  }, [historySearch]);
 
   const loadHistory = useCallback(async () => {
+    const seq = ++historyReqSeq.current;
     setLoadingHistory(true);
     try {
-      const list = await fetchSavedAssessments(currentUser.id);
-      setSavedList(list);
+      const res = await fetchSavedAssessmentsPage(currentUser.id, {
+        page: historyPage,
+        pageSize: HISTORY_PAGE_SIZE,
+        search: debouncedHistorySearch,
+      });
+      if (seq !== historyReqSeq.current) return;
+      if (res.items.length === 0 && historyPage > 1 && res.total > 0) {
+        setHistoryPage(historyPage - 1);
+        return;
+      }
+      setHistoryData({ items: res.items, total: res.total });
     } catch (err) {
-      showToast(err instanceof Error ? err.message : 'Lỗi tải lịch sử chấm', 'danger');
+      if (seq === historyReqSeq.current) {
+        showToast(err instanceof Error ? err.message : 'Lỗi tải lịch sử chấm', 'danger');
+      }
     } finally {
-      setLoadingHistory(false);
+      if (seq === historyReqSeq.current) setLoadingHistory(false);
     }
-  }, [currentUser.id, showToast]);
+  }, [currentUser.id, historyPage, debouncedHistorySearch, showToast]);
 
   useEffect(() => {
     loadHistory();
@@ -324,27 +356,21 @@ export function TeacherAssessView({
     }
   };
 
-  const handleDeleteSaved = async (assessment: Assessment) => {
-    if (!window.confirm('Xác nhận xóa bản ghi đánh giá hội thoại này?')) return;
+  const handleConfirmDeleteSaved = async () => {
+    if (!deletingAssessment) return;
+    setDeletingBusy(true);
     try {
-      await deleteAssessment(assessment.id);
-      setSavedList((prev) => prev.filter((a) => a.id !== assessment.id));
+      await deleteAssessment(deletingAssessment.id);
+      setDeletingAssessment(null);
       showToast('Đã xóa bản ghi đánh giá.', 'info');
+      await loadHistory();
       onChanged?.();
     } catch (err) {
       showToast(err instanceof Error ? err.message : 'Lỗi xóa bản ghi', 'danger');
+    } finally {
+      setDeletingBusy(false);
     }
   };
-
-  const filteredHistory = useMemo(() => {
-    const q = historySearch.trim().toLowerCase();
-    if (!q) return savedList;
-    return savedList.filter((a) => {
-      const sName = (a.student?.full_name || '').toLowerCase();
-      const tName = (a.result_json?.title || '').toLowerCase();
-      return sName.includes(q) || tName.includes(q);
-    });
-  }, [savedList, historySearch]);
 
   const activeScores = useMemo(() => {
     if (!analysisResult) return null;
@@ -407,7 +433,7 @@ export function TeacherAssessView({
               }`}
             >
               <History className="h-3.5 w-3.5" />
-              Lịch sử đã lưu ({savedList.length})
+              Lịch sử đã lưu ({historyData.total})
             </button>
           </div>
         }
@@ -721,33 +747,79 @@ export function TeacherAssessView({
             </div>
             <span className="inline-flex items-center gap-1.5 text-xs font-medium text-slate-500">
               <CheckCircle2 className="h-4 w-4 text-emerald-600" />
-              Tổng số: {filteredHistory.length} bản ghi
+              Tổng số: {historyData.total} bản ghi
             </span>
           </div>
 
-          {loadingHistory ? (
+          {loadingHistory && historyData.items.length === 0 ? (
             <div className="flex justify-center py-12">
               <Loader2 className="h-7 w-7 animate-spin text-indigo-600" />
             </div>
-          ) : filteredHistory.length === 0 ? (
+          ) : historyData.items.length === 0 ? (
             <div className="section-card py-12 text-center text-sm text-slate-500">
               Chưa có kết quả chấm hội thoại 1-1 nào được lưu.
             </div>
           ) : (
-            <div className="grid gap-3 lg:grid-cols-2">
-              {filteredHistory.map((item) => (
-                <AssessmentCard
-                  key={item.id}
-                  assessment={item}
-                  showDelete
-                  onSelect={setDetailAssessment}
-                  onDelete={handleDeleteSaved}
-                />
-              ))}
-            </div>
+            <>
+              <div className={`grid gap-3 lg:grid-cols-2 ${loadingHistory ? 'opacity-60' : ''}`}>
+                {historyData.items.map((item) => (
+                  <AssessmentCard
+                    key={item.id}
+                    assessment={item}
+                    showDelete
+                    onSelect={setDetailAssessment}
+                    onDelete={setDeletingAssessment}
+                  />
+                ))}
+              </div>
+              <Pagination
+                page={historyPage}
+                pageSize={HISTORY_PAGE_SIZE}
+                totalCount={historyData.total}
+                onPageChange={setHistoryPage}
+                disabled={loadingHistory}
+                itemLabel="buổi chấm"
+              />
+            </>
           )}
         </div>
       )}
+
+      {/* MODAL: Delete Saved Assessment Confirm */}
+      <Modal
+        open={Boolean(deletingAssessment)}
+        onClose={() => setDeletingAssessment(null)}
+        maxWidthClass="max-w-md"
+        title="Xác nhận xóa đánh giá 1-1"
+      >
+        <div className="space-y-4 text-sm text-slate-600">
+          <p>
+            Bạn có chắc chắn muốn xóa bản ghi{' '}
+            <strong className="text-slate-900">
+              {deletingAssessment?.result_json?.title || 'Chấm hội thoại 1-1'}
+            </strong>
+            ? Hành động này không thể hoàn tác.
+          </p>
+          <div className="flex justify-end gap-2">
+            <button
+              type="button"
+              onClick={() => setDeletingAssessment(null)}
+              className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700"
+            >
+              Hủy
+            </button>
+            <button
+              type="button"
+              disabled={deletingBusy}
+              onClick={handleConfirmDeleteSaved}
+              className="inline-flex items-center gap-1.5 rounded-xl bg-rose-600 px-4 py-2 text-xs font-semibold text-white hover:bg-rose-500 disabled:opacity-50"
+            >
+              {deletingBusy && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+              Xác nhận xóa
+            </button>
+          </div>
+        </div>
+      </Modal>
 
       <AssessmentDetailModal
         assessment={detailAssessment}

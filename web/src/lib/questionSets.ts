@@ -1,5 +1,19 @@
+import {
+  extractRelatedCount,
+  getRangeForPage,
+  sanitizePostgrestFilterTerm,
+  type PaginatedResult,
+} from './pagination';
 import { getSupabaseClient } from './supabase';
-import type { ExamType, Question, QuestionLevel, QuestionSet, TaskType } from './types';
+import type {
+  ExamType,
+  PracticeSession,
+  Question,
+  QuestionLevel,
+  QuestionSet,
+  SignupTeacher,
+  TaskType,
+} from './types';
 
 export interface TaskTypeMeta {
   id: TaskType;
@@ -234,6 +248,149 @@ export async function fetchQuestionSets(teacherId: string | null = null): Promis
     }
     throw err;
   }
+}
+
+export async function fetchQuestionSetsPage({
+  currentUserId,
+  scope = 'mine',
+  page = 1,
+  pageSize = 9,
+  search = '',
+  level = '',
+  publishFilter = '',
+}: {
+  currentUserId: string;
+  scope?: 'mine' | 'others';
+  page?: number;
+  pageSize?: number;
+  search?: string;
+  level?: string;
+  publishFilter?: '' | 'published' | 'draft';
+}): Promise<PaginatedResult<QuestionSet>> {
+  const client = getSupabaseClient();
+  const { from, to, safePage, safeSize } = getRangeForPage(page, pageSize);
+  const term = sanitizePostgrestFilterTerm(search);
+
+  let matchingTeacherIds: string[] = [];
+  if (term && scope === 'others') {
+    try {
+      const { data: teachersData } = await client.rpc('get_signup_teachers');
+      const lowered = term.toLowerCase();
+      matchingTeacherIds = ((teachersData as SignupTeacher[]) || [])
+        .filter((t) => t.id !== currentUserId && (t.full_name || '').toLowerCase().includes(lowered))
+        .map((t) => t.id)
+        .slice(0, 50);
+    } catch {
+      matchingTeacherIds = [];
+    }
+  }
+
+  const executeQuery = async (withAllowedColumn: boolean, useCountRel: boolean) => {
+    const countRel = useCountRel ? 'questions(count)' : 'questions(id)';
+    const cols = withAllowedColumn
+      ? `
+        id, teacher_id, title, description, level, exam_type, time_limit, is_published, created_at,
+        allowed_teacher_ids,
+        creator:profiles!teacher_id(id, full_name, email),
+        ${countRel}
+      `
+      : `
+        id, teacher_id, title, description, level, exam_type, time_limit, is_published, created_at,
+        creator:profiles!teacher_id(id, full_name, email),
+        ${countRel}
+      `;
+
+    let query = client
+      .from('question_sets')
+      .select(cols, { count: 'exact' })
+      .order('created_at', { ascending: false });
+
+    if (scope === 'mine') {
+      query = query.eq('teacher_id', currentUserId);
+      if (publishFilter === 'published') query = query.eq('is_published', true);
+      if (publishFilter === 'draft') query = query.eq('is_published', false);
+    } else {
+      query = query.neq('teacher_id', currentUserId).eq('is_published', true);
+    }
+
+    if (level) query = query.eq('level', level);
+
+    if (term) {
+      const clauses = [`title.ilike.%${term}%`, `description.ilike.%${term}%`];
+      if (matchingTeacherIds.length > 0) {
+        clauses.push(`teacher_id.in.(${matchingTeacherIds.join(',')})`);
+      }
+      query = query.or(clauses.join(','));
+    }
+
+    return query.range(from, to);
+  };
+
+  let res = await executeQuery(true, true);
+  if (res.error) {
+    const msg = res.error.message || '';
+    if (msg.includes('allowed_teacher_ids')) {
+      res = await executeQuery(false, true);
+      if (res.error) {
+        res = await executeQuery(false, false);
+      }
+    } else {
+      res = await executeQuery(true, false);
+      if (res.error && res.error.message?.includes('allowed_teacher_ids')) {
+        res = await executeQuery(false, false);
+      }
+    }
+  }
+
+  if (res.error) throw res.error;
+
+  const items = ((res.data as unknown as QuestionSet[]) || []).map((qs) => ({
+    ...qs,
+    allowed_teacher_ids: Array.isArray(qs.allowed_teacher_ids) ? qs.allowed_teacher_ids : [],
+    exam_type: (qs.exam_type || 'general') as ExamType,
+    time_limit: qs.time_limit || 0,
+    creator_name: qs.creator?.full_name || 'Giáo viên',
+    creator_email: qs.creator?.email || '',
+    question_count: extractRelatedCount(qs.questions),
+  }));
+
+  return {
+    items,
+    total: res.count || 0,
+    page: safePage,
+    pageSize: safeSize,
+  };
+}
+
+export async function fetchSetSubmissionsPage(
+  setId: string,
+  { page = 1, pageSize = 8 }: { page?: number; pageSize?: number } = {},
+): Promise<PaginatedResult<PracticeSession>> {
+  const client = getSupabaseClient();
+  const { from, to, safePage, safeSize } = getRangeForPage(page, pageSize);
+
+  const { data, count, error } = await client
+    .from('practice_sessions')
+    .select(
+      `
+      id, student_id, set_id, mode, status, score_total, score_accuracy, score_fluency, score_prosodic, score_grammar, score_context, score_lexical, exam_band, teacher_comment, started_at, completed_at,
+      student:profiles!student_id(id, full_name, email),
+      question_set:question_sets(id, title, level, exam_type)
+    `,
+      { count: 'exact' },
+    )
+    .eq('set_id', setId)
+    .in('status', ['completed', 'reviewed'])
+    .order('completed_at', { ascending: false, nullsFirst: false })
+    .range(from, to);
+
+  if (error) throw error;
+  return {
+    items: (data as unknown as PracticeSession[]) || [],
+    total: count || 0,
+    page: safePage,
+    pageSize: safeSize,
+  };
 }
 
 export async function createQuestionSet(

@@ -206,12 +206,13 @@ export interface Assessment {
   score_context?: number | null;
   score_lexical?: number | null;
   llm_feedback?: string | null;
+  teacher_note?: string | null;
   status: string;
   saved: boolean;
   result_json?: AssessmentResultJson | null;
   created_at: string;
-  student?: { full_name?: string; email?: string } | null;
-  teacher?: { full_name?: string } | null;
+  student?: { id?: string; full_name?: string; email?: string } | null;
+  teacher?: { id?: string; full_name?: string; email?: string } | null;
 }
 
 export interface PracticeAnswerRecord {

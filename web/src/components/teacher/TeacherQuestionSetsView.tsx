@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   ArrowLeft,
   CheckCircle2,
@@ -27,8 +27,9 @@ import {
   createQuestionSet,
   deleteQuestion,
   deleteQuestionSet,
-  fetchQuestionSets,
+  fetchQuestionSetsPage,
   fetchQuestions,
+  fetchSetSubmissionsPage,
   getAvailableTaskTypes,
   togglePublishSet,
   updateQuestion,
@@ -37,6 +38,7 @@ import {
 import { formatScoreValue, getExamTypeName, getLevelLabel, scoreBadgeBgClass } from '@/lib/utils';
 import { Modal } from '@/components/ui/Modal';
 import { PageHeader } from '@/components/ui/AnalyticsCharts';
+import { Pagination } from '@/components/ui/Pagination';
 import { useToast } from '@/components/ToastProvider';
 import { TaskQuestionCard, TaskTypeBadge } from '@/components/TaskQuestionCard';
 import { PracticeDetailModal } from '@/components/PracticeDetailModal';
@@ -55,15 +57,22 @@ interface TeacherQuestionSetsViewProps {
   onChanged?: () => void;
 }
 
+const SETS_PAGE_SIZE = 9;
+const SUBMISSIONS_PAGE_SIZE = 8;
+
 export function TeacherQuestionSetsView({ currentUser, onChanged }: TeacherQuestionSetsViewProps) {
   const { showToast } = useToast();
 
   const [sets, setSets] = useState<QuestionSet[]>([]);
+  const [setsTotal, setSetsTotal] = useState(0);
+  const [setPage, setSetPage] = useState(1);
   const [loading, setLoading] = useState(true);
+
+  const [ownerScope, setOwnerScope] = useState<'mine' | 'others'>('mine');
   const [searchQuery, setSearchQuery] = useState('');
-  const [ownerFilter, setOwnerFilter] = useState<'all' | 'mine' | 'others'>('all');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
   const [levelFilter, setLevelFilter] = useState('');
-  const [publishFilter, setPublishFilter] = useState('');
+  const [publishFilter, setPublishFilter] = useState<'' | 'published' | 'draft'>('');
 
   // Create Set Modal
   const [createOpen, setCreateOpen] = useState(false);
@@ -73,9 +82,15 @@ export function TeacherQuestionSetsView({ currentUser, onChanged }: TeacherQuest
   const [newLevel, setNewLevel] = useState<QuestionLevel>('intermediate');
   const [creating, setCreating] = useState(false);
 
-  // Submissions Modal per set
+  // Delete Set Confirm Modal
+  const [deletingSet, setDeletingSet] = useState<QuestionSet | null>(null);
+  const [deletingSetBusy, setDeletingSetBusy] = useState(false);
+
+  // Submissions Modal per set (paginated)
   const [subModalSet, setSubModalSet] = useState<QuestionSet | null>(null);
   const [submissions, setSubmissions] = useState<PracticeSession[]>([]);
+  const [subsTotal, setSubsTotal] = useState(0);
+  const [subPage, setSubPage] = useState(1);
   const [subsLoading, setSubsLoading] = useState(false);
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
 
@@ -90,7 +105,7 @@ export function TeacherQuestionSetsView({ currentUser, onChanged }: TeacherQuest
   const [questions, setQuestions] = useState<Question[]>([]);
   const [loadingQuestions, setLoadingQuestions] = useState(false);
 
-  // Add/Edit Question Modal
+  // Add/Edit/Delete Question Modal
   const [qModalOpen, setQModalOpen] = useState(false);
   const [editingQuestion, setEditingQuestion] = useState<Question | null>(null);
   const [qTaskType, setQTaskType] = useState<TaskType>('short_qa');
@@ -102,22 +117,72 @@ export function TeacherQuestionSetsView({ currentUser, onChanged }: TeacherQuest
   const [qRefText, setQRefText] = useState('');
   const [qImageUrl, setQImageUrl] = useState('');
   const [savingQuestion, setSavingQuestion] = useState(false);
-
-  const loadSets = useCallback(async () => {
-    setLoading(true);
-    try {
-      const list = await fetchQuestionSets(null);
-      setSets(list);
-    } catch (err) {
-      showToast(err instanceof Error ? err.message : 'Lỗi tải danh sách bộ đề', 'danger');
-    } finally {
-      setLoading(false);
-    }
-  }, [showToast]);
+  const [deletingQuestion, setDeletingQuestion] = useState<Question | null>(null);
+  const [deletingQuestionBusy, setDeletingQuestionBusy] = useState(false);
 
   useEffect(() => {
-    loadSets();
-  }, [loadSets]);
+    const timer = window.setTimeout(() => {
+      setDebouncedSearch(searchQuery);
+    }, 300);
+    return () => window.clearTimeout(timer);
+  }, [searchQuery]);
+
+  const loadSets = useCallback(
+    async (targetPage = setPage) => {
+      setLoading(true);
+      try {
+        const res = await fetchQuestionSetsPage({
+          currentUserId: currentUser.id,
+          scope: ownerScope,
+          page: targetPage,
+          pageSize: SETS_PAGE_SIZE,
+          search: debouncedSearch,
+          level: levelFilter,
+          publishFilter: ownerScope === 'mine' ? publishFilter : '',
+        });
+        if (res.items.length === 0 && targetPage > 1 && res.total > 0) {
+          setSetPage(Math.max(1, targetPage - 1));
+          return;
+        }
+        setSets(res.items);
+        setSetsTotal(res.total);
+      } catch (err) {
+        showToast(err instanceof Error ? err.message : 'Lỗi tải danh sách bộ đề', 'danger');
+      } finally {
+        setLoading(false);
+      }
+    },
+    [currentUser.id, debouncedSearch, levelFilter, ownerScope, publishFilter, setPage, showToast],
+  );
+
+  useEffect(() => {
+    loadSets(setPage);
+  }, [loadSets, setPage]);
+
+  const loadSubmissionsPage = useCallback(
+    async (setId: string, pageNum: number) => {
+      setSubsLoading(true);
+      try {
+        const res = await fetchSetSubmissionsPage(setId, {
+          page: pageNum,
+          pageSize: SUBMISSIONS_PAGE_SIZE,
+        });
+        setSubmissions(res.items);
+        setSubsTotal(res.total);
+      } catch (err) {
+        showToast(err instanceof Error ? err.message : 'Lỗi tải danh sách bài nộp', 'danger');
+      } finally {
+        setSubsLoading(false);
+      }
+    },
+    [showToast],
+  );
+
+  useEffect(() => {
+    if (subModalSet) {
+      loadSubmissionsPage(subModalSet.id, subPage);
+    }
+  }, [subModalSet, subPage, loadSubmissionsPage]);
 
   const loadEditorQuestions = useCallback(
     async (setId: string) => {
@@ -158,7 +223,9 @@ export function TeacherQuestionSetsView({ currentUser, onChanged }: TeacherQuest
       setCreateOpen(false);
       setNewTitle('');
       setNewDesc('');
-      await loadSets();
+      setOwnerScope('mine');
+      setSetPage(1);
+      await loadSets(1);
       onChanged?.();
       await handleOpenEditor({ ...created, creator_name: currentUser.full_name, question_count: 0 });
     } catch (err) {
@@ -172,12 +239,24 @@ export function TeacherQuestionSetsView({ currentUser, onChanged }: TeacherQuest
     try {
       const newId = await cloneQuestionSet(qs.id);
       showToast(`Đã tạo bản sao bộ đề "${qs.title}" về kho của bạn!`, 'success');
-      await loadSets();
+      setOwnerScope('mine');
+      setSetPage(1);
       onChanged?.();
-      const updated = await fetchQuestionSets(null);
-      setSets(updated);
-      const cloned = updated.find((item) => item.id === newId);
-      if (cloned) await handleOpenEditor(cloned);
+
+      const client = getSupabaseClient();
+      const { data: clonedRow } = await client
+        .from('question_sets')
+        .select('id, teacher_id, title, description, level, exam_type, time_limit, is_published, created_at')
+        .eq('id', newId)
+        .maybeSingle();
+
+      if (clonedRow) {
+        await handleOpenEditor({
+          ...(clonedRow as QuestionSet),
+          creator_name: currentUser.full_name,
+          question_count: qs.question_count || 0,
+        });
+      }
     } catch (err) {
       showToast(err instanceof Error ? err.message : 'Lỗi tạo bản sao bộ đề', 'danger');
     }
@@ -202,45 +281,28 @@ export function TeacherQuestionSetsView({ currentUser, onChanged }: TeacherQuest
     }
   };
 
-  const handleDeleteSet = async (qs: QuestionSet) => {
-    if (!window.confirm(`Xác nhận xóa bộ đề "${qs.title}"? Toàn bộ câu hỏi bên trong sẽ bị xóa.`)) {
-      return;
-    }
+  const handleConfirmDeleteSet = async () => {
+    if (!deletingSet) return;
+    setDeletingSetBusy(true);
     try {
-      await deleteQuestionSet(qs.id);
-      showToast(`Đã xóa bộ đề "${qs.title}".`, 'info');
-      if (editingSet?.id === qs.id) setEditingSet(null);
-      await loadSets();
+      await deleteQuestionSet(deletingSet.id);
+      showToast(`Đã xóa bộ đề "${deletingSet.title}".`, 'info');
+      if (editingSet?.id === deletingSet.id) setEditingSet(null);
+      setDeletingSet(null);
+      await loadSets(setPage);
       onChanged?.();
     } catch (err) {
       showToast(err instanceof Error ? err.message : 'Lỗi xóa bộ đề', 'danger');
+    } finally {
+      setDeletingSetBusy(false);
     }
   };
 
-  const handleOpenSubmissions = async (qs: QuestionSet) => {
+  const handleOpenSubmissions = (qs: QuestionSet) => {
+    setSubmissions([]);
+    setSubsTotal(0);
+    setSubPage(1);
     setSubModalSet(qs);
-    setSubsLoading(true);
-    try {
-      const client = getSupabaseClient();
-      const { data, error } = await client
-        .from('practice_sessions')
-        .select(
-          `
-          id, student_id, set_id, mode, status, score_total, score_accuracy, score_fluency, score_prosodic, score_grammar, score_context, score_lexical, exam_band, teacher_comment, started_at, completed_at,
-          student:profiles!student_id(id, full_name, email),
-          question_set:question_sets(id, title, level, exam_type)
-        `,
-        )
-        .eq('set_id', qs.id)
-        .in('status', ['completed', 'reviewed'])
-        .order('completed_at', { ascending: false });
-      if (error) throw error;
-      setSubmissions((data as PracticeSession[]) || []);
-    } catch (err) {
-      showToast(err instanceof Error ? err.message : 'Lỗi tải danh sách bài nộp', 'danger');
-    } finally {
-      setSubsLoading(false);
-    }
   };
 
   const handleSaveSetMeta = async (e: React.FormEvent) => {
@@ -354,7 +416,7 @@ export function TeacherQuestionSetsView({ currentUser, onChanged }: TeacherQuest
       }
       setQModalOpen(false);
       await loadEditorQuestions(editingSet.id);
-      await loadSets();
+      await loadSets(setPage);
       onChanged?.();
     } catch (err) {
       showToast(err instanceof Error ? err.message : 'Lỗi lưu câu hỏi', 'danger');
@@ -363,38 +425,21 @@ export function TeacherQuestionSetsView({ currentUser, onChanged }: TeacherQuest
     }
   };
 
-  const handleDeleteQuestion = async (q: Question) => {
-    if (!editingSet) return;
-    if (!window.confirm(`Xóa câu hỏi số ${q.order_num}?`)) return;
+  const handleConfirmDeleteQuestion = async () => {
+    if (!editingSet || !deletingQuestion) return;
+    setDeletingQuestionBusy(true);
     try {
-      await deleteQuestion(q.id);
+      await deleteQuestion(deletingQuestion.id);
       showToast('Đã xóa câu hỏi.', 'info');
+      setDeletingQuestion(null);
       await loadEditorQuestions(editingSet.id);
-      await loadSets();
+      await loadSets(setPage);
     } catch (err) {
       showToast(err instanceof Error ? err.message : 'Lỗi xóa câu hỏi', 'danger');
+    } finally {
+      setDeletingQuestionBusy(false);
     }
   };
-
-  const filteredSets = useMemo(() => {
-    const q = searchQuery.trim().toLowerCase();
-    return sets.filter((qs) => {
-      const isMine = qs.teacher_id === currentUser.id;
-      if (ownerFilter === 'mine' && !isMine) return false;
-      if (ownerFilter === 'others' && isMine) return false;
-      if (levelFilter && qs.level !== levelFilter) return false;
-      if (publishFilter === 'published' && !qs.is_published) return false;
-      if (publishFilter === 'draft' && qs.is_published) return false;
-      if (
-        q &&
-        !qs.title.toLowerCase().includes(q) &&
-        !(qs.creator_name || '').toLowerCase().includes(q)
-      ) {
-        return false;
-      }
-      return true;
-    });
-  }, [sets, currentUser.id, ownerFilter, levelFilter, publishFilter, searchQuery]);
 
   // VIEW B: QUESTION SET EDITOR
   if (editingSet) {
@@ -406,7 +451,10 @@ export function TeacherQuestionSetsView({ currentUser, onChanged }: TeacherQuest
         <div className="flex flex-wrap items-center justify-between gap-3">
           <button
             type="button"
-            onClick={() => setEditingSet(null)}
+            onClick={() => {
+              setEditingSet(null);
+              loadSets(setPage);
+            }}
             className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700 shadow-sm hover:bg-slate-50 transition"
           >
             <ArrowLeft className="h-4 w-4" />
@@ -582,7 +630,7 @@ export function TeacherQuestionSetsView({ currentUser, onChanged }: TeacherQuest
                         </button>
                         <button
                           type="button"
-                          onClick={() => handleDeleteQuestion(q)}
+                          onClick={() => setDeletingQuestion(q)}
                           className="rounded-xl border border-rose-200 bg-rose-50 p-1.5 text-rose-600 hover:bg-rose-100"
                           title="Xóa câu hỏi"
                         >
@@ -763,6 +811,38 @@ export function TeacherQuestionSetsView({ currentUser, onChanged }: TeacherQuest
             </div>
           </form>
         </Modal>
+
+        {/* Delete Question Confirm Modal */}
+        <Modal
+          open={Boolean(deletingQuestion)}
+          onClose={() => setDeletingQuestion(null)}
+          maxWidthClass="max-w-md"
+          title="Xác nhận xóa câu hỏi"
+        >
+          <div className="space-y-4 text-sm text-slate-600">
+            <p>
+              Bạn chắc chắn muốn xóa <strong className="text-slate-900">Câu {deletingQuestion?.order_num}</strong>?
+            </p>
+            <div className="flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setDeletingQuestion(null)}
+                className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700"
+              >
+                Hủy
+              </button>
+              <button
+                type="button"
+                disabled={deletingQuestionBusy}
+                onClick={handleConfirmDeleteQuestion}
+                className="inline-flex items-center gap-1.5 rounded-xl bg-rose-600 px-4 py-2 text-xs font-semibold text-white hover:bg-rose-500 disabled:opacity-50"
+              >
+                {deletingQuestionBusy && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                Xóa câu hỏi
+              </button>
+            </div>
+          </div>
+        </Modal>
       </div>
     );
   }
@@ -774,45 +854,81 @@ export function TeacherQuestionSetsView({ currentUser, onChanged }: TeacherQuest
         eyebrow="KHO BỘ ĐỀ SPEAKING"
         title="Quản lý Bộ đề Speaking"
         subtitle="Tạo bộ đề mới, biên soạn câu hỏi theo chuẩn thi và tạo bản sao các bộ đề tham khảo về kho của bạn."
-        pill={<span>{filteredSets.length} bộ đề</span>}
+        pill={<span>{setsTotal} bộ đề</span>}
         action={
-          <button
-            type="button"
-            onClick={() => setCreateOpen(true)}
-            className="btn-glow inline-flex items-center gap-2 rounded-2xl bg-indigo-600 px-4 py-2.5 text-sm font-bold text-white shadow-md shadow-indigo-600/20 hover:bg-indigo-500 transition"
-          >
-            <Plus className="h-4 w-4" />
-            Tạo bộ đề mới
-          </button>
+          <div className="flex flex-wrap items-center gap-2.5">
+            <div className="inline-flex rounded-2xl border border-slate-200 bg-slate-100/90 p-1">
+              <button
+                type="button"
+                onClick={() => {
+                  setOwnerScope('mine');
+                  setSetPage(1);
+                }}
+                className={`rounded-xl px-3.5 py-2 text-xs font-semibold transition ${
+                  ownerScope === 'mine'
+                    ? 'bg-white text-indigo-700 shadow-sm'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                Bộ đề của tôi
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setOwnerScope('others');
+                  setPublishFilter('');
+                  setSetPage(1);
+                }}
+                className={`rounded-xl px-3.5 py-2 text-xs font-semibold transition ${
+                  ownerScope === 'others'
+                    ? 'bg-white text-indigo-700 shadow-sm'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                Tham khảo (Chỉ xem)
+              </button>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setCreateOpen(true)}
+              className="btn-glow inline-flex items-center gap-2 rounded-2xl bg-indigo-600 px-4 py-2.5 text-sm font-bold text-white shadow-md shadow-indigo-600/20 hover:bg-indigo-500 transition"
+            >
+              <Plus className="h-4 w-4" />
+              Tạo bộ đề mới
+            </button>
+          </div>
         }
       />
 
-      {/* Filters */}
-      <div className="section-card grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      {/* Filters (removed "Tất cả bộ đề" dropdown) */}
+      <div
+        className={`section-card grid gap-3 sm:grid-cols-2 ${
+          ownerScope === 'mine' ? 'lg:grid-cols-3' : 'lg:grid-cols-2'
+        }`}
+      >
         <div className="relative">
           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
           <input
             type="text"
             value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Tìm tên bộ đề, tác giả..."
+            onChange={(e) => {
+              setSearchQuery(e.target.value);
+              setSetPage(1);
+            }}
+            placeholder={
+              ownerScope === 'mine' ? 'Tìm tên hoặc mô tả bộ đề...' : 'Tìm tên bộ đề, tác giả...'
+            }
             className="w-full rounded-xl border border-slate-200 bg-slate-50/80 py-2.5 pl-9 pr-3 text-sm text-slate-900 placeholder-slate-400 focus:border-indigo-500 focus:bg-white focus:outline-none"
           />
         </div>
 
         <select
-          value={ownerFilter}
-          onChange={(e) => setOwnerFilter(e.target.value as 'all' | 'mine' | 'others')}
-          className="rounded-xl border border-slate-200 bg-slate-50/80 px-3 py-2.5 text-sm text-slate-900 focus:border-indigo-500 focus:bg-white focus:outline-none"
-        >
-          <option value="all">Tất cả bộ đề</option>
-          <option value="mine">Bộ đề của tôi</option>
-          <option value="others">Tham khảo (Chỉ xem)</option>
-        </select>
-
-        <select
           value={levelFilter}
-          onChange={(e) => setLevelFilter(e.target.value)}
+          onChange={(e) => {
+            setLevelFilter(e.target.value);
+            setSetPage(1);
+          }}
           className="rounded-xl border border-slate-200 bg-slate-50/80 px-3 py-2.5 text-sm text-slate-900 focus:border-indigo-500 focus:bg-white focus:outline-none"
         >
           <option value="">Mọi trình độ</option>
@@ -821,134 +937,152 @@ export function TeacherQuestionSetsView({ currentUser, onChanged }: TeacherQuest
           <option value="advanced">Nâng cao</option>
         </select>
 
-        <select
-          value={publishFilter}
-          onChange={(e) => setPublishFilter(e.target.value)}
-          className="rounded-xl border border-slate-200 bg-slate-50/80 px-3 py-2.5 text-sm text-slate-900 focus:border-indigo-500 focus:bg-white focus:outline-none"
-        >
-          <option value="">Tất cả trạng thái</option>
-          <option value="published">Đang mở</option>
-          <option value="draft">Bản nháp</option>
-        </select>
+        {ownerScope === 'mine' && (
+          <select
+            value={publishFilter}
+            onChange={(e) => {
+              setPublishFilter(e.target.value as '' | 'published' | 'draft');
+              setSetPage(1);
+            }}
+            className="rounded-xl border border-slate-200 bg-slate-50/80 px-3 py-2.5 text-sm text-slate-900 focus:border-indigo-500 focus:bg-white focus:outline-none"
+          >
+            <option value="">Tất cả trạng thái</option>
+            <option value="published">Đang mở</option>
+            <option value="draft">Bản nháp</option>
+          </select>
+        )}
       </div>
 
       {loading ? (
         <div className="flex justify-center py-14">
           <Loader2 className="h-8 w-8 animate-spin text-indigo-600" />
         </div>
-      ) : filteredSets.length === 0 ? (
+      ) : sets.length === 0 ? (
         <div className="section-card py-12 text-center text-sm text-slate-500">
-          Chưa có bộ đề nào khớp tiêu chí lọc.
+          {ownerScope === 'mine'
+            ? 'Bạn chưa có bộ đề nào khớp tiêu chí lọc.'
+            : 'Chưa có bộ đề tham khảo nào khớp tiêu chí lọc.'}
         </div>
       ) : (
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-          {filteredSets.map((qs) => {
-            const isOwner = qs.teacher_id === currentUser.id;
-            return (
-              <div
-                key={qs.id}
-                className="section-card card-interactive flex flex-col justify-between gap-4"
-              >
-                <div className="space-y-2.5">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <span
-                      className={`rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${
-                        isOwner
-                          ? 'border border-indigo-200 bg-indigo-50 text-indigo-700'
-                          : 'border border-slate-200 bg-slate-100 text-slate-600'
-                      }`}
-                    >
-                      {isOwner ? 'Của tôi' : 'Tham khảo (Chỉ xem)'}
-                    </span>
+        <div className="space-y-4">
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+            {sets.map((qs) => {
+              const isOwner = qs.teacher_id === currentUser.id;
+              return (
+                <div
+                  key={qs.id}
+                  className="section-card card-interactive flex flex-col justify-between gap-4"
+                >
+                  <div className="space-y-2.5">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <span
+                        className={`rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${
+                          isOwner
+                            ? 'border border-indigo-200 bg-indigo-50 text-indigo-700'
+                            : 'border border-slate-200 bg-slate-100 text-slate-600'
+                        }`}
+                      >
+                        {isOwner ? 'Của tôi' : 'Tham khảo (Chỉ xem)'}
+                      </span>
 
-                    {qs.is_published ? (
-                      <span className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-0.5 text-[11px] font-semibold text-emerald-700">
-                        <Eye className="h-3 w-3" /> Đang mở
-                      </span>
-                    ) : (
-                      <span className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-slate-50 px-2.5 py-0.5 text-[11px] font-semibold text-slate-500">
-                        <EyeOff className="h-3 w-3" /> Nháp
-                      </span>
+                      {qs.is_published ? (
+                        <span className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-0.5 text-[11px] font-semibold text-emerald-700">
+                          <Eye className="h-3 w-3" /> Đang mở
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-slate-50 px-2.5 py-0.5 text-[11px] font-semibold text-slate-500">
+                          <EyeOff className="h-3 w-3" /> Nháp
+                        </span>
+                      )}
+                    </div>
+
+                    <h3 className="text-base font-bold text-slate-900 line-clamp-2">{qs.title}</h3>
+                    {qs.description && (
+                      <p className="text-xs text-slate-500 line-clamp-2">{qs.description}</p>
                     )}
+
+                    <div className="flex flex-wrap items-center gap-2 text-[11px] text-slate-600 pt-1">
+                      <span className="rounded-lg bg-slate-100 px-2 py-0.5 font-medium">
+                        {getExamTypeName(qs.exam_type)}
+                      </span>
+                      <span className="rounded-lg bg-slate-100 px-2 py-0.5 font-medium">
+                        {getLevelLabel(qs.level)}
+                      </span>
+                      <span className="rounded-lg border border-sky-200 bg-sky-50 px-2 py-0.5 text-sky-700 font-semibold">
+                        {qs.question_count || 0} câu
+                      </span>
+                    </div>
+                    <div className="text-[11px] text-slate-500">
+                      Tác giả: <strong className="text-slate-800">{qs.creator_name}</strong>
+                    </div>
                   </div>
 
-                  <h3 className="text-base font-bold text-slate-900 line-clamp-2">{qs.title}</h3>
-                  {qs.description && (
-                    <p className="text-xs text-slate-500 line-clamp-2">{qs.description}</p>
-                  )}
-
-                  <div className="flex flex-wrap items-center gap-2 text-[11px] text-slate-600 pt-1">
-                    <span className="rounded-lg bg-slate-100 px-2 py-0.5 font-medium">
-                      {getExamTypeName(qs.exam_type)}
-                    </span>
-                    <span className="rounded-lg bg-slate-100 px-2 py-0.5 font-medium">
-                      {getLevelLabel(qs.level)}
-                    </span>
-                    <span className="rounded-lg border border-sky-200 bg-sky-50 px-2 py-0.5 text-sky-700 font-semibold">
-                      {qs.question_count || 0} câu
-                    </span>
-                  </div>
-                  <div className="text-[11px] text-slate-500">
-                    Tác giả: <strong className="text-slate-800">{qs.creator_name}</strong>
-                  </div>
-                </div>
-
-                <div className="flex flex-wrap items-center gap-2 border-t border-slate-100 pt-3">
-                  <button
-                    type="button"
-                    onClick={() => handleOpenEditor(qs)}
-                    className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-indigo-600 px-3 py-2 text-xs font-semibold text-white shadow-sm hover:bg-indigo-500 transition"
-                  >
-                    <Edit3 className="h-3.5 w-3.5" />
-                    {isOwner ? 'Biên soạn' : 'Xem câu hỏi'}
-                  </button>
-
-                  {!isOwner && (
+                  <div className="flex flex-wrap items-center gap-2 border-t border-slate-100 pt-3">
                     <button
                       type="button"
-                      onClick={() => handleCloneSet(qs)}
-                      className="inline-flex items-center gap-1 rounded-xl border border-sky-200 bg-sky-50 px-3 py-2 text-xs font-semibold text-sky-700 hover:bg-sky-100 transition"
-                      title="Tạo bản sao bộ đề về kho của tôi"
+                      onClick={() => handleOpenEditor(qs)}
+                      className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-indigo-600 px-3 py-2 text-xs font-semibold text-white shadow-sm hover:bg-indigo-500 transition"
                     >
-                      <Copy className="h-3.5 w-3.5" />
-                      Tạo bản sao
+                      <Edit3 className="h-3.5 w-3.5" />
+                      {isOwner ? 'Biên soạn' : 'Xem câu hỏi'}
                     </button>
-                  )}
 
-                  <button
-                    type="button"
-                    onClick={() => handleOpenSubmissions(qs)}
-                    className="inline-flex items-center gap-1 rounded-xl border border-slate-200 bg-white px-2.5 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition"
-                    title="Xem bài nộp học viên"
-                  >
-                    <FileCheck2 className="h-3.5 w-3.5 text-emerald-600" />
-                    Bài nộp
-                  </button>
-
-                  {isOwner && (
-                    <>
+                    {!isOwner && (
                       <button
                         type="button"
-                        onClick={() => handleTogglePublish(qs)}
-                        className="rounded-xl border border-slate-200 bg-white p-2 text-slate-600 hover:bg-slate-50 transition"
-                        title={qs.is_published ? 'Ẩn bộ đề' : 'Mở bộ đề cho học viên'}
+                        onClick={() => handleCloneSet(qs)}
+                        className="inline-flex items-center gap-1 rounded-xl border border-sky-200 bg-sky-50 px-3 py-2 text-xs font-semibold text-sky-700 hover:bg-sky-100 transition"
+                        title="Tạo bản sao bộ đề về kho của tôi"
                       >
-                        {qs.is_published ? <Lock className="h-3.5 w-3.5" /> : <Unlock className="h-3.5 w-3.5" />}
+                        <Copy className="h-3.5 w-3.5" />
+                        Tạo bản sao
                       </button>
-                      <button
-                        type="button"
-                        onClick={() => handleDeleteSet(qs)}
-                        className="rounded-xl border border-rose-200 bg-rose-50 p-2 text-rose-600 hover:bg-rose-100 transition"
-                        title="Xóa bộ đề"
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </button>
-                    </>
-                  )}
+                    )}
+
+                    <button
+                      type="button"
+                      onClick={() => handleOpenSubmissions(qs)}
+                      className="inline-flex items-center gap-1 rounded-xl border border-slate-200 bg-white px-2.5 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition"
+                      title="Xem bài nộp học viên"
+                    >
+                      <FileCheck2 className="h-3.5 w-3.5 text-emerald-600" />
+                      Bài nộp
+                    </button>
+
+                    {isOwner && (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => handleTogglePublish(qs)}
+                          className="rounded-xl border border-slate-200 bg-white p-2 text-slate-600 hover:bg-slate-50 transition"
+                          title={qs.is_published ? 'Ẩn bộ đề' : 'Mở bộ đề cho học viên'}
+                        >
+                          {qs.is_published ? <Lock className="h-3.5 w-3.5" /> : <Unlock className="h-3.5 w-3.5" />}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setDeletingSet(qs)}
+                          className="rounded-xl border border-rose-200 bg-rose-50 p-2 text-rose-600 hover:bg-rose-100 transition"
+                          title="Xóa bộ đề"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      </>
+                    )}
+                  </div>
                 </div>
-              </div>
-            );
-          })}
+              );
+            })}
+          </div>
+
+          <Pagination
+            page={setPage}
+            pageSize={SETS_PAGE_SIZE}
+            totalCount={setsTotal}
+            onPageChange={setSetPage}
+            disabled={loading}
+            itemLabel="bộ đề"
+          />
         </div>
       )}
 
@@ -1033,7 +1167,39 @@ export function TeacherQuestionSetsView({ currentUser, onChanged }: TeacherQuest
         </form>
       </Modal>
 
-      {/* Set Submissions Modal */}
+      {/* Delete Question Set Confirm Modal */}
+      <Modal
+        open={Boolean(deletingSet)}
+        onClose={() => setDeletingSet(null)}
+        maxWidthClass="max-w-md"
+        title="Xác nhận xóa bộ đề"
+      >
+        <div className="space-y-4 text-sm text-slate-600">
+          <p>
+            Xóa bộ đề <strong className="text-slate-900">{deletingSet?.title}</strong>? Toàn bộ câu hỏi bên trong sẽ bị xóa và không thể khôi phục.
+          </p>
+          <div className="flex justify-end gap-2">
+            <button
+              type="button"
+              onClick={() => setDeletingSet(null)}
+              className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700"
+            >
+              Hủy
+            </button>
+            <button
+              type="button"
+              disabled={deletingSetBusy}
+              onClick={handleConfirmDeleteSet}
+              className="inline-flex items-center gap-1.5 rounded-xl bg-rose-600 px-4 py-2 text-xs font-semibold text-white hover:bg-rose-500 disabled:opacity-50"
+            >
+              {deletingSetBusy && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+              Xác nhận xóa
+            </button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Set Submissions Modal (Paginated) */}
       <Modal
         open={Boolean(subModalSet)}
         onClose={() => setSubModalSet(null)}
@@ -1049,37 +1215,49 @@ export function TeacherQuestionSetsView({ currentUser, onChanged }: TeacherQuest
             Chưa có học viên nào hoàn thành bộ đề này.
           </div>
         ) : (
-          <div className="space-y-2.5">
-            {submissions.map((s) => (
-              <button
-                key={s.id}
-                type="button"
-                onClick={() => setSelectedSessionId(s.id)}
-                className="flex w-full items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-slate-50/75 p-3.5 text-left hover:border-indigo-300 hover:bg-white transition"
-              >
-                <div>
-                  <div className="text-sm font-bold text-slate-900">
-                    {s.student?.full_name || 'Học viên'}
+          <div className="space-y-3">
+            <div className="space-y-2.5">
+              {submissions.map((s) => (
+                <button
+                  key={s.id}
+                  type="button"
+                  onClick={() => setSelectedSessionId(s.id)}
+                  className="flex w-full items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-slate-50/75 p-3.5 text-left hover:border-indigo-300 hover:bg-white transition"
+                >
+                  <div>
+                    <div className="text-sm font-bold text-slate-900">
+                      {s.student?.full_name || 'Học viên'}
+                    </div>
+                    <div className="mt-0.5 text-xs text-slate-500">
+                      {s.mode === 'exam' ? 'Thi thử' : 'Luyện tập'} ·{' '}
+                      {new Date(s.completed_at || s.started_at).toLocaleString('vi-VN')}
+                    </div>
                   </div>
-                  <div className="mt-0.5 text-xs text-slate-500">
-                    {s.mode === 'exam' ? 'Thi thử' : 'Luyện tập'} ·{' '}
-                    {new Date(s.completed_at || s.started_at).toLocaleString('vi-VN')}
-                  </div>
-                </div>
-                <div className="flex items-center gap-2.5">
-                  {s.status === 'reviewed' && (
-                    <span className="inline-flex items-center gap-1 rounded-full border border-sky-200 bg-sky-50 px-2.5 py-0.5 text-[11px] font-semibold text-sky-700">
-                      <CheckCircle2 className="h-3 w-3" /> Đã duyệt
+                  <div className="flex items-center gap-2.5">
+                    {s.status === 'reviewed' && (
+                      <span className="inline-flex items-center gap-1 rounded-full border border-sky-200 bg-sky-50 px-2.5 py-0.5 text-[11px] font-semibold text-sky-700">
+                        <CheckCircle2 className="h-3 w-3" /> Đã duyệt
+                      </span>
+                    )}
+                    <span
+                      className={`rounded-xl border px-3 py-1 text-sm font-extrabold tabular-nums ${scoreBadgeBgClass(s.score_total)}`}
+                    >
+                      {formatScoreValue(s.score_total)}
                     </span>
-                  )}
-                  <span
-                    className={`rounded-xl border px-3 py-1 text-sm font-extrabold tabular-nums ${scoreBadgeBgClass(s.score_total)}`}
-                  >
-                    {formatScoreValue(s.score_total)}
-                  </span>
-                </div>
-              </button>
-            ))}
+                  </div>
+                </button>
+              ))}
+            </div>
+
+            <Pagination
+              compact
+              page={subPage}
+              pageSize={SUBMISSIONS_PAGE_SIZE}
+              totalCount={subsTotal}
+              onPageChange={setSubPage}
+              disabled={subsLoading}
+              itemLabel="bài nộp"
+            />
           </div>
         )}
       </Modal>

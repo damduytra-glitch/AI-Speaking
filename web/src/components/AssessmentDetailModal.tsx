@@ -139,9 +139,18 @@ export function AssessmentDetailModal({ assessment, onClose }: AssessmentDetailM
       }
       subtitle={`Ngày tạo: ${new Date(assessment.created_at).toLocaleString('vi-VN')}${
         assessment.student?.full_name ? ` · Học viên: ${assessment.student.full_name}` : ''
-      }`}
+      }${assessment.teacher?.full_name ? ` · Giáo viên: ${assessment.teacher.full_name}` : ''}`}
     >
       <div className="space-y-5">
+        {assessment.teacher_note && (
+          <div className="flex items-start gap-2.5 rounded-2xl border border-amber-200 bg-amber-50/85 px-4 py-3 text-xs text-amber-900">
+            <MessageSquareText className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+            <div>
+              <span className="font-bold">Ghi chú quản lý / giáo viên:</span>{' '}
+              <span>{assessment.teacher_note}</span>
+            </div>
+          </div>
+        )}
         <div className="section-card">
           <div className="mb-4 flex flex-wrap items-start justify-between gap-2">
             <div>

@@ -1,4 +1,10 @@
 import { getAuthHeaders } from './auth';
+import {
+  extractRelatedCount,
+  getRangeForPage,
+  sanitizePostgrestFilterTerm,
+  type PaginatedResult,
+} from './pagination';
 import { getSupabaseClient } from './supabase';
 import type {
   AssessmentResultJson,
@@ -7,6 +13,7 @@ import type {
   Question,
   QuestionSet,
   SessionMode,
+  SignupTeacher,
   TaskType,
 } from './types';
 
@@ -31,6 +38,87 @@ export async function fetchPublishedSets(): Promise<QuestionSet[]> {
     teacher_name: qs.teacher?.full_name || 'N/A',
     question_count: Array.isArray(qs.questions) ? qs.questions.length : 0,
   }));
+}
+
+export async function fetchPublishedSetsPage({
+  page = 1,
+  pageSize = 9,
+  search = '',
+  examType = '',
+  level = '',
+}: {
+  page?: number;
+  pageSize?: number;
+  search?: string;
+  examType?: string;
+  level?: string;
+} = {}): Promise<PaginatedResult<QuestionSet>> {
+  const client = getSupabaseClient();
+  const { from, to, safePage, safeSize } = getRangeForPage(page, pageSize);
+  const term = sanitizePostgrestFilterTerm(search);
+
+  let matchingTeacherIds: string[] = [];
+  if (term) {
+    try {
+      const { data: teachersData } = await client.rpc('get_signup_teachers');
+      const lowered = term.toLowerCase();
+      matchingTeacherIds = ((teachersData as SignupTeacher[]) || [])
+        .filter((t) => (t.full_name || '').toLowerCase().includes(lowered))
+        .map((t) => t.id)
+        .slice(0, 50);
+    } catch {
+      matchingTeacherIds = [];
+    }
+  }
+
+  const buildQuery = (countRelation: 'questions(count)' | 'questions(id)') => {
+    let query = client
+      .from('question_sets')
+      .select(
+        `
+        id, teacher_id, title, description, level, exam_type, time_limit, created_at,
+        teacher:profiles!teacher_id(full_name),
+        ${countRelation}
+      `,
+        { count: 'exact' },
+      )
+      .eq('is_published', true)
+      .order('created_at', { ascending: false });
+
+    if (examType) query = query.eq('exam_type', examType);
+    if (level) query = query.eq('level', level);
+
+    if (term) {
+      const clauses = [`title.ilike.%${term}%`, `description.ilike.%${term}%`];
+      if (matchingTeacherIds.length > 0) {
+        clauses.push(`teacher_id.in.(${matchingTeacherIds.join(',')})`);
+      }
+      query = query.or(clauses.join(','));
+    }
+
+    return query.range(from, to);
+  };
+
+  let res = await buildQuery('questions(count)');
+  if (res.error) {
+    res = await buildQuery('questions(id)');
+  }
+  if (res.error) throw res.error;
+
+  const items = ((res.data as unknown as QuestionSet[]) || []).map((qs) => ({
+    ...qs,
+    exam_type: (qs.exam_type || 'general') as QuestionSet['exam_type'],
+    time_limit: qs.time_limit || 0,
+    teacher_name: qs.teacher?.full_name || 'Giáo viên',
+    question_count: extractRelatedCount(qs.questions),
+  }));
+
+  return {
+    items,
+    total: res.count || 0,
+    page: safePage,
+    pageSize: safeSize,
+  };
 }
 
 export async function fetchSetWithQuestions(setId: string): Promise<QuestionSet & { questions: Question[] }> {
@@ -399,9 +487,71 @@ export async function fetchSessionHistory(studentId: string): Promise<PracticeSe
     )
     .eq('student_id', studentId)
     .in('status', ['completed', 'reviewed'])
-    .order('completed_at', { ascending: false });
+    .order('completed_at', { ascending: false, nullsFirst: false });
   if (error) throw error;
   return (data as PracticeSession[]) || [];
+}
+
+export async function fetchSessionHistoryPage(
+  studentId: string,
+  {
+    page = 1,
+    pageSize = 8,
+    search = '',
+    mode = 'all',
+  }: {
+    page?: number;
+    pageSize?: number;
+    search?: string;
+    mode?: 'all' | SessionMode;
+  } = {},
+): Promise<PaginatedResult<PracticeSession>> {
+  const client = getSupabaseClient();
+  const { from, to, safePage, safeSize } = getRangeForPage(page, pageSize);
+  const term = sanitizePostgrestFilterTerm(search);
+
+  let matchingSetIds: string[] = [];
+  if (term) {
+    const { data: setsData } = await client
+      .from('question_sets')
+      .select('id')
+      .ilike('title', `%${term}%`)
+      .limit(50);
+    matchingSetIds = ((setsData as Array<{ id: string }>) || []).map((qs) => qs.id);
+    if (matchingSetIds.length === 0) {
+      return { items: [], total: 0, page: safePage, pageSize: safeSize };
+    }
+  }
+
+  let query = client
+    .from('practice_sessions')
+    .select(
+      `
+      id, mode, status, score_total, score_accuracy, score_fluency, score_prosodic, score_grammar, score_context, score_lexical, exam_band,
+      teacher_comment, reviewed_by, reviewed_at,
+      started_at, completed_at,
+      question_set:question_sets(id, title, level, exam_type)
+    `,
+      { count: 'exact' },
+    )
+    .eq('student_id', studentId)
+    .in('status', ['completed', 'reviewed'])
+    .order('completed_at', { ascending: false, nullsFirst: false });
+
+  if (mode !== 'all') query = query.eq('mode', mode);
+  if (term && matchingSetIds.length > 0) {
+    query = query.in('set_id', matchingSetIds);
+  }
+
+  const { data, count, error } = await query.range(from, to);
+  if (error) throw error;
+
+  return {
+    items: (data as PracticeSession[]) || [],
+    total: count || 0,
+    page: safePage,
+    pageSize: safeSize,
+  };
 }
 
 export async function fetchSessionDetail(sessionId: string): Promise<PracticeSession> {

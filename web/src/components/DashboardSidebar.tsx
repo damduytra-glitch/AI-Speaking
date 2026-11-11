@@ -62,7 +62,8 @@ export function getNavItemsForRole(
         badge: pendingTeacherCount > 0 ? pendingTeacherCount : undefined,
       },
       { id: 'users', label: 'Tài khoản & Lớp học', mobileLabel: 'Tài khoản', icon: 'users' },
-      { id: 'content', label: 'Bộ đề & Hoạt động', mobileLabel: 'Bộ đề', icon: 'content' },
+      { id: 'content', label: 'Bộ đề & Luyện thi', mobileLabel: 'Bộ đề', icon: 'content' },
+      { id: 'assessments', label: 'Hội thoại 1-1', mobileLabel: 'Hội thoại', icon: 'assess' },
       { id: 'classroom', label: 'Phân tích tiết dạy', mobileLabel: 'Tiết dạy', icon: 'classroom' },
       { id: 'profile', label: 'Hồ sơ cá nhân', mobileLabel: 'Hồ sơ', icon: 'profile' },
     ];
