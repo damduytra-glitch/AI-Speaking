@@ -147,7 +147,7 @@ export function PracticeDetailModal({
               {Number(detail.score_total || 0).toFixed(1)}
             </div>
             <div className="mt-1 text-xs font-medium text-slate-400">
-              Overall Band Điểm Khảo Thí / 10
+              Điểm tổng kết / 10
             </div>
 
             <div className="mx-auto mt-4 grid max-w-2xl grid-cols-2 gap-3 md:grid-cols-4">
@@ -155,25 +155,25 @@ export function PracticeDetailModal({
                 <div className="text-xl font-bold text-emerald-400">
                   {Number(detail.score_accuracy ?? detail.score_total ?? 0).toFixed(1)}
                 </div>
-                <div className="text-[11px] text-slate-400">Phát âm (PR: 25%)</div>
+                <div className="text-[11px] text-slate-400">Phát âm</div>
               </div>
               <div className="rounded-xl border border-white/10 bg-slate-950/60 p-3">
                 <div className="text-xl font-bold text-sky-400">
                   {formatScoreValue(detail.score_context)}
                 </div>
-                <div className="text-[11px] text-slate-400">Mạch lạc (FC: 25%)</div>
+                <div className="text-[11px] text-slate-400">Mạch lạc</div>
               </div>
               <div className="rounded-xl border border-white/10 bg-slate-950/60 p-3">
                 <div className="text-xl font-bold text-amber-400">
                   {formatScoreValue(detail.score_lexical)}
                 </div>
-                <div className="text-[11px] text-slate-400">Từ vựng (LR: 25%)</div>
+                <div className="text-[11px] text-slate-400">Từ vựng</div>
               </div>
               <div className="rounded-xl border border-white/10 bg-slate-950/60 p-3">
                 <div className="text-xl font-bold text-indigo-400">
                   {formatScoreValue(detail.score_grammar)}
                 </div>
-                <div className="text-[11px] text-slate-400">Ngữ pháp (GRA: 25%)</div>
+                <div className="text-[11px] text-slate-400">Ngữ pháp</div>
               </div>
             </div>
           </div>
@@ -205,7 +205,7 @@ export function PracticeDetailModal({
             <div className="section-card space-y-3">
               <h4 className="flex items-center gap-2 text-sm font-bold text-indigo-300">
                 <PencilLine className="h-4 w-4" />
-                Duyệt bài &amp; Ghi nhận xét sư phạm cho Học viên
+                Duyệt bài &amp; Ghi nhận xét cho Học viên
               </h4>
               <textarea
                 rows={3}
@@ -267,43 +267,38 @@ export function PracticeDetailModal({
 
                   <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-5">
                     <div className="rounded-xl border border-violet-500/40 bg-gradient-to-br from-indigo-500/20 to-violet-500/15 p-2.5 text-center">
-                      <div className="text-[10px] font-bold uppercase text-slate-300">Overall</div>
+                      <div className="text-[10px] font-bold uppercase text-slate-300">Điểm tổng</div>
                       <div className={`text-xl font-extrabold ${scoreTextColorClass(a.score_total)}`}>
                         {Number(a.score_total || 0).toFixed(1)}
                       </div>
-                      <div className="text-[10px] text-slate-400">Tổng hợp</div>
                     </div>
 
                     <div className="rounded-xl border border-white/10 bg-slate-950/75 p-2.5 text-center">
-                      <div className="text-[10px] font-bold uppercase text-slate-400">PR (25%)</div>
+                      <div className="text-[10px] font-bold uppercase text-slate-400">Phát âm</div>
                       <div className={`text-lg font-bold ${scoreTextColorClass(prScore)}`}>
                         {Number(prScore).toFixed(1)}
                       </div>
-                      <div className="text-[10px] text-slate-500">Phát âm</div>
                     </div>
 
                     <div className="rounded-xl border border-white/10 bg-slate-950/75 p-2.5 text-center">
-                      <div className="text-[10px] font-bold uppercase text-slate-400">FC (25%)</div>
+                      <div className="text-[10px] font-bold uppercase text-slate-400">Mạch lạc</div>
                       <div className={`text-lg font-bold ${ctxScore != null ? scoreTextColorClass(ctxScore) : 'text-slate-500'}`}>
                         {formatScoreValue(ctxScore)}
                       </div>
-                      <div className="text-[10px] text-slate-500">Mạch lạc</div>
                     </div>
 
                     <div className="rounded-xl border border-white/10 bg-slate-950/75 p-2.5 text-center">
-                      <div className="text-[10px] font-bold uppercase text-slate-400">LR (25%)</div>
+                      <div className="text-[10px] font-bold uppercase text-slate-400">Từ vựng</div>
                       <div className={`text-lg font-bold ${lexScore != null ? scoreTextColorClass(lexScore) : 'text-slate-500'}`}>
                         {formatScoreValue(lexScore)}
                       </div>
-                      <div className="text-[10px] text-slate-500">Từ vựng</div>
                     </div>
 
                     <div className="rounded-xl border border-white/10 bg-slate-950/75 p-2.5 text-center">
-                      <div className="text-[10px] font-bold uppercase text-slate-400">GRA (25%)</div>
+                      <div className="text-[10px] font-bold uppercase text-slate-400">Ngữ pháp</div>
                       <div className={`text-lg font-bold ${gramScore != null ? scoreTextColorClass(gramScore) : 'text-slate-500'}`}>
                         {formatScoreValue(gramScore)}
                       </div>
-                      <div className="text-[10px] text-slate-500">Ngữ pháp</div>
                     </div>
                   </div>
 
@@ -311,7 +306,7 @@ export function PracticeDetailModal({
                     <div className="rounded-xl border border-white/10 bg-slate-950/65 p-3">
                       <div className="mb-1 flex items-center gap-1.5 text-xs font-semibold text-slate-400">
                         <MessageSquareQuote className="h-3.5 w-3.5 text-indigo-400" />
-                        Transcript nhận diện:
+                        Nội dung bạn đã nói:
                       </div>
                       <p className="text-sm italic text-slate-100">&ldquo;{a.transcript}&rdquo;</p>
                     </div>
@@ -321,7 +316,7 @@ export function PracticeDetailModal({
                     <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3">
                       <div className="mb-1 flex items-center gap-1.5 text-xs font-semibold text-amber-300">
                         <Sparkles className="h-3.5 w-3.5" />
-                        Nhận xét Giám khảo AI:
+                        Nhận xét từ AI:
                       </div>
                       <p className="text-xs leading-relaxed text-slate-100">
                         {gemini.feedback_summary}

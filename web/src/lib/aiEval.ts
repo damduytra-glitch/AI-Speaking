@@ -109,7 +109,7 @@ async function callAiProxy({ action, messages, temperature = 0.2, gpuUrlFallback
   }
 
   if (!res) {
-    throw new Error('Không thể kết nối tới dịch vụ AI Evaluator Proxy.');
+    throw new Error('Không thể kết nối tới dịch vụ chấm điểm AI.');
   }
 
   const payload = (await res.json().catch(() => null)) as {
@@ -121,7 +121,9 @@ async function callAiProxy({ action, messages, temperature = 0.2, gpuUrlFallback
   } | null;
 
   if (!res.ok || !payload?.success) {
-    throw new Error(payload?.error || payload?.detail || `AI Proxy HTTP ${res.status}`);
+    throw new Error(
+      payload?.error || payload?.detail || 'Dịch vụ AI tạm thời không phản hồi. Vui lòng thử lại.',
+    );
   }
 
   return payload;

@@ -5,11 +5,8 @@ import {
   AlertTriangle,
   AudioWaveform,
   CheckCircle2,
-  ChevronDown,
-  ChevronUp,
   Clock,
   CloudUpload,
-  FileJson,
   FileSpreadsheet,
   GraduationCap,
   Languages,
@@ -17,12 +14,12 @@ import {
   Mic,
   Presentation,
   Search,
-  SlidersHorizontal,
   Trash2,
 } from 'lucide-react';
 import { getAuthHeaders } from '@/lib/auth';
 import {
   formatDurationReadable,
+  formatFriendlyStep,
   formatTimestamp,
   hasVoiceEnrolled,
   parseVoiceEmbeddings,
@@ -142,10 +139,6 @@ export function ClassroomAnalysisView({
   const [audioObjectUrl, setAudioObjectUrl] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState(false);
 
-  const [showAdvanced, setShowAdvanced] = useState(false);
-  const [teacherThreshold, setTeacherThreshold] = useState(0.4);
-  const [vadThresholdDb, setVadThresholdDb] = useState('-40');
-
   const [running, setRunning] = useState(false);
   const [loadingStep, setLoadingStep] = useState('');
   const [result, setResult] = useState<ClassroomAnalysisResult | null>(null);
@@ -174,7 +167,7 @@ export function ClassroomAnalysisView({
 
   const handleRunAnalysis = async () => {
     if (!gpuUrl.trim()) {
-      showToast('Chưa cấu hình GPU Backend URL! Vui lòng cập nhật ở màn hình Quản trị.', 'danger');
+      showToast('Hệ thống phân tích hiện chưa sẵn sàng. Vui lòng thử lại sau.', 'danger');
       return;
     }
     if (!selectedTeacher || !selectedEmb) {
@@ -188,15 +181,15 @@ export function ClassroomAnalysisView({
 
     setRunning(true);
     setResult(null);
-    setLoadingStep('Đang gửi audio buổi học lên GPU Server...');
+    setLoadingStep('Đang tải bản ghi âm lên để phân tích...');
 
     try {
       const formData = new FormData();
       formData.append('audio', audioFile);
       formData.append('teacher_embeddings_json', JSON.stringify(selectedEmb));
       formData.append('teacher_id', selectedTeacher.id);
-      formData.append('teacher_threshold', teacherThreshold.toFixed(2));
-      formData.append('vad_threshold_db', vadThresholdDb);
+      formData.append('teacher_threshold', '0.40');
+      formData.append('vad_threshold_db', '-40');
 
       const cleanApi = gpuUrl.trim().replace(/\/+$/, '');
       const authHeaders = await getAuthHeaders();
@@ -243,7 +236,7 @@ export function ClassroomAnalysisView({
         }
 
         const task = pollJson.data || {};
-        if (task.step) setLoadingStep(task.step);
+        if (task.step) setLoadingStep(formatFriendlyStep(task.step));
         if (task.status === 'completed' && task.result) {
           setResult(task.result);
           setMetaInfo({
@@ -254,7 +247,7 @@ export function ClassroomAnalysisView({
           break;
         }
         if (task.status === 'error') {
-          throw new Error(task.error || 'Lỗi xử lý trên GPU Server');
+          throw new Error(task.error || 'Không thể hoàn thành phân tích bản ghi âm. Vui lòng thử lại.');
         }
       }
     } catch (err) {
@@ -265,40 +258,24 @@ export function ClassroomAnalysisView({
     }
   };
 
-  const handleExportJson = () => {
-    if (!result) return;
-    const payload = {
-      teacher_profile: metaInfo?.teacherName || null,
-      exported_at: new Date().toISOString(),
-      ...result,
-    };
-    const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
-    triggerFileDownload(
-      `classroom-lang-${stamp}.json`,
-      JSON.stringify(payload, null, 2),
-      'application/json;charset=utf-8',
-    );
-    showToast('Đã xuất báo cáo JSON!', 'success');
-  };
-
   const handleExportCsv = () => {
     if (!result) return;
     const rows: unknown[][] = [
       [
-        'Section',
-        'Teacher_Name',
-        'Total_Audio_Sec',
-        'Total_Speech_Sec',
-        'Silence_Sec',
-        'Teacher_EN_%',
-        'Teacher_VI_%',
-        'Student_EN_%',
-        'Student_VI_%',
-        'Overall_EN_%',
-        'Overall_VI_%',
+        'Mục',
+        'Giáo viên',
+        'Tổng thời lượng (giây)',
+        'Thời lượng nói (giây)',
+        'Thời lượng im lặng (giây)',
+        'GV - Tiếng Anh (%)',
+        'GV - Tiếng Việt (%)',
+        'HV - Tiếng Anh (%)',
+        'HV - Tiếng Việt (%)',
+        'Toàn tiết - Tiếng Anh (%)',
+        'Toàn tiết - Tiếng Việt (%)',
       ],
       [
-        'SUMMARY',
+        'TỔNG QUAN',
         metaInfo?.teacherName || '',
         result.duration?.total_audio_sec ?? 0,
         result.duration?.total_speech_sec ?? 0,
@@ -312,28 +289,24 @@ export function ClassroomAnalysisView({
       ],
       [],
       [
-        'Index',
-        'Start_Sec',
-        'End_Sec',
-        'Duration_Sec',
-        'Role',
-        'Teacher_Similarity',
-        'Whisper_Lang',
-        'EN_Words',
-        'VI_Words',
-        'Total_Words',
-        'EN_%',
-        'VI_%',
-        'Transcript',
+        'STT',
+        'Bắt đầu (giây)',
+        'Kết thúc (giây)',
+        'Thời lượng (giây)',
+        'Người nói',
+        'Số từ Tiếng Anh',
+        'Số từ Tiếng Việt',
+        'Tổng số từ',
+        'Tỷ lệ Tiếng Anh (%)',
+        'Tỷ lệ Tiếng Việt (%)',
+        'Nội dung nói',
       ],
       ...(result.segments || []).map((seg) => [
         Number(seg.index) + 1,
         seg.start_sec,
         seg.end_sec,
         seg.duration_sec,
-        seg.role,
-        seg.teacher_similarity,
-        seg.whisper_lang,
+        seg.role === 'teacher' ? 'Giáo viên' : 'Học viên',
         seg.en_words,
         seg.vi_words,
         seg.total_words,
@@ -350,7 +323,7 @@ export function ClassroomAnalysisView({
       csvBody,
       'text/csv;charset=utf-8',
     );
-    showToast('Đã xuất báo cáo CSV!', 'success');
+    showToast('Đã tải xuống báo cáo Excel (.csv)!', 'success');
   };
 
   const filteredSegments = useMemo(() => {
@@ -374,17 +347,12 @@ export function ClassroomAnalysisView({
         <div>
           <h2 className="flex items-center gap-2.5 text-2xl font-bold text-white">
             <Languages className="h-6 w-6 text-sky-400" />
-            Phân tích Tỷ lệ Ngôn ngữ Lớp học (EN / VI)
+            Phân tích Ngôn ngữ Tiết dạy (EN / VI)
           </h2>
           <p className="mt-1 text-sm text-slate-400">
-            Tách lời Giáo viên và Học viên từ bản ghi tiết dạy để đo lường tỷ lệ sử dụng Tiếng Anh / Tiếng Việt.
+            Nhận diện lời Giáo viên và Học viên từ bản ghi tiết dạy để đo lường tỷ lệ sử dụng Tiếng Anh / Tiếng Việt.
           </p>
         </div>
-        <span className="rounded-full border border-sky-500/35 bg-sky-500/15 px-3 py-1 text-xs font-semibold text-sky-300">
-          {mode === 'teacher_self'
-            ? 'Chế độ Giáo viên (Mẫu giọng cá nhân)'
-            : 'Chế độ Quản trị (Toàn hệ thống)'}
-        </span>
       </div>
 
       <div className="section-card space-y-5">
@@ -416,10 +384,10 @@ export function ClassroomAnalysisView({
               />
               <CloudUpload className="mx-auto mb-2 h-9 w-9 text-indigo-400" />
               <p className="text-sm font-semibold text-white">
-                Kéo thả hoặc nhấn chọn file audio buổi học
+                Kéo thả hoặc nhấn chọn file âm thanh buổi học
               </p>
               <p className="mt-1 text-xs text-slate-400">
-                Hỗ trợ WAV, MP3, M4A, WEBM (khuyên dùng &lt; 300MB, gửi trực tiếp tới GPU Server)
+                Hỗ trợ WAV, MP3, M4A, WEBM (khuyên dùng dưới 300MB)
               </p>
             </div>
 
@@ -466,7 +434,7 @@ export function ClassroomAnalysisView({
                 )}
                 {teacherChoices.map((t) => {
                   const ready = Boolean(parseVoiceEmbeddings(t));
-                  const fallbackBadge = hasVoiceEnrolled(t) && !ready ? ' (Thiếu vector giọng ⚠️)' : '';
+                  const fallbackBadge = hasVoiceEnrolled(t) && !ready ? ' (Chưa hoàn tất mẫu giọng ⚠️)' : '';
                   const tag = ready ? ' (Đã có giọng 🎙)' : fallbackBadge || ' (Chưa có giọng ⚠️)';
                   return (
                     <option key={t.id} value={t.id}>
@@ -523,54 +491,6 @@ export function ClassroomAnalysisView({
               </div>
             </div>
 
-            <div className="rounded-xl border border-white/10 bg-slate-950/50 p-3">
-              <button
-                type="button"
-                onClick={() => setShowAdvanced((v) => !v)}
-                className="flex w-full items-center justify-between text-xs font-semibold text-slate-300 hover:text-white"
-              >
-                <span className="flex items-center gap-2">
-                  <SlidersHorizontal className="h-3.5 w-3.5 text-indigo-400" />
-                  Tùy chọn ngưỡng nâng cao (Mặc định: {teacherThreshold.toFixed(2)} / {vadThresholdDb} dB)
-                </span>
-                {showAdvanced ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-              </button>
-
-              {showAdvanced && (
-                <div className="mt-3 grid gap-3 border-t border-white/10 pt-3 sm:grid-cols-2">
-                  <div>
-                    <div className="mb-1 flex justify-between text-xs text-slate-400">
-                      <span>Ngưỡng nhận diện GV</span>
-                      <span className="font-mono text-indigo-300">{teacherThreshold.toFixed(2)}</span>
-                    </div>
-                    <input
-                      type="range"
-                      min="0.25"
-                      max="0.70"
-                      step="0.05"
-                      value={teacherThreshold}
-                      onChange={(e) => setTeacherThreshold(Number(e.target.value))}
-                      className="w-full accent-indigo-500"
-                    />
-                  </div>
-                  <div>
-                    <label className="mb-1 block text-xs text-slate-400">
-                      Ngưỡng âm lượng VAD (dB)
-                    </label>
-                    <select
-                      value={vadThresholdDb}
-                      onChange={(e) => setVadThresholdDb(e.target.value)}
-                      className="w-full rounded-lg border border-white/15 bg-slate-900 px-2.5 py-1.5 text-xs text-white"
-                    >
-                      <option value="-45">-45 dB (Rất nhạy)</option>
-                      <option value="-40">-40 dB (Mặc định chuẩn)</option>
-                      <option value="-35">-35 dB (Lọc ồn mạnh)</option>
-                    </select>
-                  </div>
-                </div>
-              )}
-            </div>
-
             <button
               type="button"
               disabled={!canRun}
@@ -597,7 +517,7 @@ export function ClassroomAnalysisView({
         <div className="section-card flex items-center gap-4 border-indigo-500/30 bg-indigo-500/10">
           <Loader2 className="h-6 w-6 shrink-0 animate-spin text-indigo-400" />
           <div>
-            <div className="text-sm font-semibold text-white">Đang xử lý audio lớp học bằng AI...</div>
+            <div className="text-sm font-semibold text-white">Đang phân tích bản ghi âm tiết dạy...</div>
             <div className="text-xs text-slate-300">{loadingStep}</div>
           </div>
         </div>
@@ -611,9 +531,6 @@ export function ClassroomAnalysisView({
                 <h3 className="text-base font-bold text-white">Kết quả Phân tích Ngôn ngữ Tiết dạy</h3>
                 <p className="text-xs text-slate-400">
                   Giáo viên: <strong className="text-slate-200">{metaInfo?.teacherName}</strong>
-                  {metaInfo?.processingSec != null
-                    ? ` · Thời gian xử lý: ${Number(metaInfo.processingSec).toFixed(1)}s`
-                    : ''}
                 </p>
               </div>
               <div className="flex flex-wrap gap-2">
@@ -623,28 +540,20 @@ export function ClassroomAnalysisView({
                   className="inline-flex items-center gap-1.5 rounded-xl border border-emerald-500/35 bg-emerald-500/15 px-3.5 py-2 text-xs font-semibold text-emerald-300 hover:bg-emerald-500/25 transition"
                 >
                   <FileSpreadsheet className="h-4 w-4" />
-                  Xuất CSV (Excel)
-                </button>
-                <button
-                  type="button"
-                  onClick={handleExportJson}
-                  className="inline-flex items-center gap-1.5 rounded-xl border border-sky-500/35 bg-sky-500/15 px-3.5 py-2 text-xs font-semibold text-sky-300 hover:bg-sky-500/25 transition"
-                >
-                  <FileJson className="h-4 w-4" />
-                  Xuất JSON
+                  Tải báo cáo Excel
                 </button>
               </div>
             </div>
 
             <div className="grid gap-4 md:grid-cols-2">
               <RoleLanguageCard
-                title="Giáo viên (Teacher)"
+                title="Giáo viên"
                 icon={<Presentation className="h-4 w-4" />}
                 stats={result.teacher}
                 accentClass="text-indigo-300"
               />
               <RoleLanguageCard
-                title="Học viên (Student)"
+                title="Học viên"
                 icon={<GraduationCap className="h-4 w-4" />}
                 stats={result.student}
                 accentClass="text-emerald-300"
@@ -681,7 +590,7 @@ export function ClassroomAnalysisView({
                 <div className="mb-2 flex items-center justify-between text-xs font-bold uppercase tracking-wider text-slate-300">
                   <span className="flex items-center gap-1.5">
                     <Clock className="h-3.5 w-3.5 text-indigo-400" />
-                    Phân bố thời lượng Audio
+                    Phân bố thời lượng ghi âm
                   </span>
                   <span className="rounded-full bg-indigo-500/20 px-2.5 py-0.5 text-indigo-300">
                     {Number(result.duration?.speech_ratio_percent || 0).toFixed(1)}% nói
@@ -754,16 +663,15 @@ export function ClassroomAnalysisView({
                   <tr>
                     <th className="px-3 py-2.5">#</th>
                     <th className="px-3 py-2.5">Thời gian</th>
-                    <th className="px-3 py-2.5">Vai trò</th>
+                    <th className="px-3 py-2.5">Người nói</th>
                     <th className="px-3 py-2.5 min-w-[160px]">Tỷ lệ EN / VI</th>
-                    <th className="px-3 py-2.5">Cosine GV</th>
-                    <th className="px-3 py-2.5">Transcript</th>
+                    <th className="px-3 py-2.5">Nội dung nói</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-white/10 bg-slate-900/40">
                   {filteredSegments.length === 0 ? (
                     <tr>
-                      <td colSpan={6} className="px-4 py-8 text-center text-slate-400">
+                      <td colSpan={5} className="px-4 py-8 text-center text-slate-400">
                         Không có vùng nói nào khớp bộ lọc hiện tại.
                       </td>
                     </tr>
@@ -813,15 +721,6 @@ export function ClassroomAnalysisView({
                                 style={{ width: `${Number(seg.vi_percent || 0)}%` }}
                               />
                             </div>
-                          </td>
-                          <td
-                            className={`px-3 py-2.5 font-mono ${
-                              isTeacher ? 'font-semibold text-indigo-300' : 'text-slate-400'
-                            }`}
-                          >
-                            {seg.teacher_similarity != null
-                              ? Number(seg.teacher_similarity).toFixed(2)
-                              : '--'}
                           </td>
                           <td className="px-3 py-2.5 text-slate-200 leading-relaxed">
                             {seg.transcript}

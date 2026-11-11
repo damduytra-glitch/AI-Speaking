@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import { BarChart3, Bot, ChevronRight, MessageSquareText, Sparkles, Trash2 } from 'lucide-react';
+import { BarChart3, Bot, ChevronRight, MessageSquareText, Trash2 } from 'lucide-react';
 import { Modal } from './ui/Modal';
 import { ComprehensiveAiFeedback, DialogueTimeline } from './AiFeedbackBlocks';
 import { formatScoreValue, getIeltsBandLabel, scoreBadgeBgClass } from '@/lib/utils';
@@ -63,21 +63,21 @@ export function AssessmentCard({
           <div className="mt-0.5 text-xs text-slate-400">{dateStr}</div>
           <div className="mt-1.5 flex flex-wrap gap-1.5 text-[11px] font-medium">
             <span className="rounded border border-emerald-500/30 bg-emerald-500/15 px-2 py-0.5 text-emerald-300">
-              PR: {Number(prScore).toFixed(1)}
+              Phát âm: {Number(prScore).toFixed(1)}
             </span>
             {assessment.score_context != null && (
               <span className="rounded border border-sky-500/30 bg-sky-500/15 px-2 py-0.5 text-sky-300">
-                FC: {Number(assessment.score_context).toFixed(1)}
+                Mạch lạc: {Number(assessment.score_context).toFixed(1)}
               </span>
             )}
             {lrScore != null && (
               <span className="rounded border border-amber-500/30 bg-amber-500/15 px-2 py-0.5 text-amber-300">
-                LR: {Number(lrScore).toFixed(1)}
+                Từ vựng: {Number(lrScore).toFixed(1)}
               </span>
             )}
             {assessment.score_grammar != null && (
               <span className="rounded border border-indigo-500/30 bg-indigo-500/15 px-2 py-0.5 text-indigo-300">
-                GRA: {Number(assessment.score_grammar).toFixed(1)}
+                Ngữ pháp: {Number(assessment.score_grammar).toFixed(1)}
               </span>
             )}
           </div>
@@ -144,17 +144,13 @@ export function AssessmentDetailModal({ assessment, onClose }: AssessmentDetailM
             <div>
               <h4 className="text-sm font-bold text-white flex items-center gap-2">
                 <BarChart3 className="h-4 w-4 text-indigo-400" />
-                Điểm Đánh Giá Toàn Diện Cuộc Hội Thoại
+                Điểm Đánh Giá Cuộc Hội Thoại
               </h4>
               <p className="mt-0.5 text-xs text-slate-400">
-                Kết hợp Phát âm âm học SpeechOcean &amp; Khảo thí Ngữ pháp / Ngữ cảnh (AI Evaluator)
+                Tổng hợp đánh giá phát âm, ngữ pháp và khả năng phản hồi tự nhiên.
               </p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
-              <span className="inline-flex items-center gap-1 rounded-full border border-indigo-500/35 bg-indigo-500/15 px-2.5 py-0.5 text-xs text-indigo-300">
-                <Sparkles className="h-3.5 w-3.5" />
-                AI Evaluator
-              </span>
               <span className={`rounded-full border px-3 py-0.5 text-xs font-semibold ${bandInfo.badgeClass}`}>
                 {bandInfo.band} ({bandInfo.level})
               </span>
@@ -163,37 +159,33 @@ export function AssessmentDetailModal({ assessment, onClose }: AssessmentDetailM
 
           <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
             <div className="rounded-xl border border-indigo-500/40 bg-gradient-to-br from-indigo-500/20 to-sky-500/15 p-3.5 text-center">
-              <div className="text-xs font-medium text-slate-300">Overall Band</div>
+              <div className="text-xs font-medium text-slate-300">Điểm tổng</div>
               <div className={`mt-1 text-2xl font-extrabold ${scoreBadgeBgClass(total)} inline-block rounded-lg border px-3 py-0.5`}>
                 {total.toFixed(1)}
               </div>
-              <div className="mt-1 text-[11px] text-slate-400">Thang điểm IELTS</div>
+              <div className="mt-1 text-[11px] text-slate-400">Thang điểm 10</div>
             </div>
 
             <div className="rounded-xl border border-white/10 bg-slate-950/60 p-3.5 text-center">
-              <div className="text-xs font-medium text-slate-400">Phát Âm (PR)</div>
+              <div className="text-xs font-medium text-slate-400">Phát Âm</div>
               <div className="mt-1 text-2xl font-bold text-emerald-400">{Number(prVal).toFixed(1)}</div>
-              <div className="mt-1 text-[11px] text-slate-400">Pronunciation (25%)</div>
             </div>
 
             <div className="rounded-xl border border-white/10 bg-slate-950/60 p-3.5 text-center">
-              <div className="text-xs font-medium text-slate-400">Mạch Lạc (FC)</div>
+              <div className="text-xs font-medium text-slate-400">Mạch Lạc</div>
               <div className="mt-1 text-2xl font-bold text-sky-400">{formatScoreValue(ctxVal)}</div>
-              <div className="mt-1 text-[11px] text-slate-400">Fluency &amp; Coherence (25%)</div>
             </div>
 
             <div className="rounded-xl border border-white/10 bg-slate-950/60 p-3.5 text-center">
-              <div className="text-xs font-medium text-slate-400">Từ Vựng (LR)</div>
+              <div className="text-xs font-medium text-slate-400">Từ Vựng</div>
               <div className="mt-1 text-2xl font-bold text-amber-400">
                 {formatScoreValue(lexVal ?? gramVal)}
               </div>
-              <div className="mt-1 text-[11px] text-slate-400">Lexical Resource (25%)</div>
             </div>
 
             <div className="rounded-xl border border-white/10 bg-slate-950/60 p-3.5 text-center">
-              <div className="text-xs font-medium text-slate-400">Ngữ Pháp (GRA)</div>
+              <div className="text-xs font-medium text-slate-400">Ngữ Pháp</div>
               <div className="mt-1 text-2xl font-bold text-indigo-400">{formatScoreValue(gramVal)}</div>
-              <div className="mt-1 text-[11px] text-slate-400">Range &amp; Accuracy (25%)</div>
             </div>
           </div>
         </div>
@@ -203,11 +195,8 @@ export function AssessmentDetailModal({ assessment, onClose }: AssessmentDetailM
             <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
               <h4 className="flex items-center gap-2 text-sm font-bold text-white">
                 <Bot className="h-4 w-4 text-sky-400" />
-                Nhận Xét &amp; Đánh Giá Chi Tiết từ AI Evaluator
+                Nhận xét chi tiết từ AI
               </h4>
-              <span className="rounded-full border border-emerald-500/35 bg-emerald-500/15 px-2.5 py-0.5 text-[11px] font-semibold text-emerald-300">
-                Chuẩn Khảo Thí
-              </span>
             </div>
             <ComprehensiveAiFeedback
               aiEval={aiEval}

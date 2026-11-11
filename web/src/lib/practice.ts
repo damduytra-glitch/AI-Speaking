@@ -214,11 +214,11 @@ export function calculateBandScore(score10: number, examType = 'general') {
     else if (s >= 3.5) band = 5.0;
     else if (s >= 2.8) band = 4.5;
 
-    let desc = 'Limited User';
-    if (band >= 8.0) desc = 'Very Good / Expert';
-    else if (band >= 7.0) desc = 'Good User';
-    else if (band >= 6.0) desc = 'Competent User';
-    else if (band >= 5.0) desc = 'Modest User';
+    let desc = 'Cần cải thiện';
+    if (band >= 8.0) desc = 'Rất tốt / Thành thạo';
+    else if (band >= 7.0) desc = 'Tốt';
+    else if (band >= 6.0) desc = 'Khá';
+    else if (band >= 5.0) desc = 'Trung bình';
 
     return {
       band: `Band ${band.toFixed(1)}`,
@@ -289,10 +289,10 @@ export function calculateBandScore(score10: number, examType = 'general') {
     };
   }
 
-  let rank = 'Elementary (Cần rèn luyện)';
-  if (s >= 8.5) rank = 'Advanced (Xuất sắc)';
-  else if (s >= 7.0) rank = 'Upper-Intermediate (Tốt)';
-  else if (s >= 5.0) rank = 'Intermediate (Khá)';
+  let rank = 'Sơ cấp (Cần rèn luyện)';
+  if (s >= 8.5) rank = 'Xuất sắc';
+  else if (s >= 7.0) rank = 'Tốt';
+  else if (s >= 5.0) rank = 'Khá';
 
   return {
     band: `${s.toFixed(1)} / 10`,
@@ -552,11 +552,11 @@ export async function detectVoiceActivity(
     let reason = hasVoice ? 'Phát hiện giọng nói hợp lệ' : 'Không phát hiện giọng nói';
     if (!hasVoice) {
       if (peakAmp < minPeakAmp) {
-        reason = 'Âm lượng mic quá nhỏ hoặc micro bị tắt tiếng (mute)';
+        reason = 'Âm lượng mic quá nhỏ hoặc micro đang bị tắt tiếng';
       } else if (speechDurationSec < minSpeechDuration) {
-        reason = `Thời lượng tiếng người quá ngắn (${speechDurationSec.toFixed(2)}s)`;
+        reason = `Thời lượng nói quá ngắn (${speechDurationSec.toFixed(1)}s)`;
       } else {
-        reason = 'Năng lượng âm thanh dưới ngưỡng giọng nói người';
+        reason = 'Chưa nghe rõ giọng nói trong bản ghi âm';
       }
     }
 
@@ -577,7 +577,7 @@ export async function detectVoiceActivity(
       maxRms: 0.1,
       avgRms: 0.05,
       peakAmp: 0.1,
-      reason: 'Lỗi giải mã audio',
+      reason: 'Không thể đọc dữ liệu âm thanh',
     };
   } finally {
     try {
@@ -613,12 +613,14 @@ export async function assessSingleAnswer(
 
   if (!startRes.ok) {
     const errJson = (await startRes.json().catch(() => null)) as { error?: string; detail?: string } | null;
-    throw new Error(errJson?.error || errJson?.detail || `API Error: ${startRes.status}`);
+    throw new Error(
+      errJson?.error || errJson?.detail || 'Không thể gửi bản thu âm để chấm điểm. Vui lòng thử lại.',
+    );
   }
 
   const startData = (await startRes.json()) as { success?: boolean; task_id?: string; error?: string };
   if (!startData.success || !startData.task_id) {
-    throw new Error(startData.error || 'API Error');
+    throw new Error(startData.error || 'Không thể bắt đầu chấm điểm bài nói. Vui lòng thử lại.');
   }
 
   const taskId = startData.task_id;
@@ -629,18 +631,24 @@ export async function assessSingleAnswer(
     });
     if (!statusRes.ok) {
       const errJson = (await statusRes.json().catch(() => null)) as { error?: string; detail?: string } | null;
-      throw new Error(errJson?.error || errJson?.detail || 'Network error polling status');
+      throw new Error(
+        errJson?.error || errJson?.detail || 'Mất kết nối trong khi kiểm tra kết quả chấm bài.',
+      );
     }
     const statusData = (await statusRes.json()) as {
       success?: boolean;
       error?: string;
       data?: { status?: string; result?: AssessmentResultJson; error?: string };
     };
-    if (!statusData.success) throw new Error(statusData.error || 'Status error');
+    if (!statusData.success) {
+      throw new Error(statusData.error || 'Không thể lấy kết quả chấm bài. Vui lòng thử lại.');
+    }
 
     const task = statusData.data;
     if (task?.status === 'completed' && task.result) return task.result;
-    if (task?.status === 'error') throw new Error(task.error || 'Assessment error');
+    if (task?.status === 'error') {
+      throw new Error(task.error || 'Không thể hoàn tất chấm điểm câu trả lời. Vui lòng thử lại.');
+    }
   }
 }
 

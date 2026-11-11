@@ -45,12 +45,12 @@ export function InactiveAccountGate({
         <h2 className="text-2xl font-bold text-white">
           {isSuspended
             ? 'Tài khoản đang bị tạm khóa'
-            : 'Tài khoản Giáo viên đang chờ Admin phê duyệt'}
+            : 'Tài khoản Giáo viên đang chờ phê duyệt'}
         </h2>
         <p className="mx-auto max-w-lg text-sm leading-relaxed text-slate-300">
           {isSuspended
             ? 'Tài khoản của bạn hiện bị khóa quyền truy cập hệ thống. Vui lòng liên hệ Quản trị viên để được hỗ trợ.'
-            : `Xin chào ${profile.full_name}, yêu cầu đăng ký vai trò Giáo viên của bạn đã được ghi nhận. Sau khi Admin phê duyệt, bạn có thể truy cập đầy đủ công cụ quản lý lớp học, bộ đề và chấm điểm.`}
+            : `Xin chào ${profile.full_name}, yêu cầu đăng ký vai trò Giáo viên của bạn đã được ghi nhận. Sau khi Quản trị viên phê duyệt, bạn có thể truy cập đầy đủ công cụ quản lý lớp học, bộ đề và chấm điểm.`}
         </p>
       </div>
 
@@ -66,7 +66,7 @@ export function InactiveAccountGate({
         <div className="flex justify-between">
           <span className="text-slate-400">Trạng thái:</span>
           <span className={isSuspended ? 'font-bold text-rose-400' : 'font-bold text-amber-400'}>
-            {isSuspended ? 'Tạm khóa (Suspended)' : 'Chờ duyệt (Pending)'}
+            {isSuspended ? 'Tạm khóa' : 'Chờ duyệt'}
           </span>
         </div>
       </div>

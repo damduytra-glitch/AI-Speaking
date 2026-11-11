@@ -92,13 +92,18 @@ export function ProfileView({ profile, gpuUrl, onProfileUpdated }: ProfileViewPr
           Hồ sơ Cá nhân
         </h2>
         <p className="mt-1 text-sm text-slate-400">
-          Quản lý thông tin tài khoản và cấu hình nhận diện giọng nói.
+          {isAdmin
+            ? 'Cập nhật thông tin tài khoản của bạn.'
+            : 'Quản lý thông tin tài khoản và mẫu giọng nói cá nhân.'}
         </p>
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-12">
+      <div className={isAdmin ? 'max-w-3xl' : 'grid gap-6 lg:grid-cols-12'}>
         {/* Info Form */}
-        <form onSubmit={handleSaveProfile} className="section-card lg:col-span-7 space-y-5">
+        <form
+          onSubmit={handleSaveProfile}
+          className={`section-card space-y-5 ${isAdmin ? '' : 'lg:col-span-7'}`}
+        >
           <div className="flex items-center gap-4 border-b border-white/10 pb-4">
             <img
               src={getAvatarUrl(profile.full_name, 128)}
@@ -174,15 +179,15 @@ export function ProfileView({ profile, gpuUrl, onProfileUpdated }: ProfileViewPr
           </div>
         </form>
 
-        {/* Voice Enrollment Card */}
-        <div className="section-card lg:col-span-5 flex flex-col justify-between space-y-4">
-          <div className="space-y-3">
-            <div className="flex items-center justify-between gap-2">
-              <h3 className="flex items-center gap-2 text-base font-bold text-white">
-                <Mic className="h-5 w-5 text-sky-400" />
-                Mẫu Giọng Nói (ERes2Net)
-              </h3>
-              {!isAdmin && (
+        {/* Voice Enrollment Card (Teacher & Student only) */}
+        {!isAdmin && (
+          <div className="section-card lg:col-span-5 flex flex-col justify-between space-y-4">
+            <div className="space-y-3">
+              <div className="flex items-center justify-between gap-2">
+                <h3 className="flex items-center gap-2 text-base font-bold text-white">
+                  <Mic className="h-5 w-5 text-sky-400" />
+                  Mẫu Giọng Nói Cá Nhân
+                </h3>
                 <span
                   className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${
                     voiceReady
@@ -192,63 +197,61 @@ export function ProfileView({ profile, gpuUrl, onProfileUpdated }: ProfileViewPr
                 >
                   {voiceReady ? 'Đã kích hoạt' : 'Chưa đăng ký'}
                 </span>
+              </div>
+
+              {voiceReady ? (
+                <div className="flex items-start gap-2.5 rounded-xl border border-emerald-500/35 bg-emerald-500/10 p-3.5 text-xs text-emerald-200">
+                  <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-400" />
+                  <span>
+                    Giọng nói của bạn đã được lưu để hệ thống tự động nhận diện trong hội thoại 1-1 và phân tích tiết dạy.
+                  </span>
+                </div>
+              ) : (
+                <div className="flex items-start gap-2.5 rounded-xl border border-amber-500/35 bg-amber-500/10 p-3.5 text-xs text-amber-200">
+                  <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-400" />
+                  <span>
+                    {profile.role === 'teacher'
+                      ? 'Bạn cần đăng ký mẫu giọng nói trước khi chạy Chấm hội thoại 1-1 hoặc Phân tích tiết dạy.'
+                      : 'Hãy đăng ký mẫu giọng nói để hệ thống nhận diện chính xác giọng của bạn khi chấm hội thoại.'}
+                  </span>
+                </div>
+              )}
+
+              {profile.voice_sample_url && (
+                <div className="rounded-xl border border-white/10 bg-slate-950/60 p-3">
+                  <div className="mb-1.5 text-[11px] font-medium text-slate-400">
+                    Bản thu âm mẫu hiện tại:
+                  </div>
+                  <audio controls src={profile.voice_sample_url} className="h-8 w-full" />
+                </div>
               )}
             </div>
 
-            {isAdmin ? (
-              <p className="text-xs leading-relaxed text-slate-400">
-                Tài khoản Admin không bắt buộc mẫu giọng nói trong luồng vận hành. Bạn vẫn có thể thu âm thử nếu cần kiểm tra tính năng tách giọng.
-              </p>
-            ) : voiceReady ? (
-              <div className="flex items-start gap-2.5 rounded-xl border border-emerald-500/35 bg-emerald-500/10 p-3.5 text-xs text-emerald-200">
-                <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-400" />
-                <span>
-                  Hệ thống đã lưu vector đặc trưng giọng nói của bạn để tách người nói chính xác trong hội thoại 1-1 và phân tích lớp học.
-                </span>
-              </div>
-            ) : (
-              <div className="flex items-start gap-2.5 rounded-xl border border-amber-500/35 bg-amber-500/10 p-3.5 text-xs text-amber-200">
-                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-400" />
-                <span>
-                  {profile.role === 'teacher'
-                    ? 'Bạn cần đăng ký mẫu giọng nói trước khi chạy Chấm hội thoại 1-1 hoặc Phân tích ngôn ngữ lớp học.'
-                    : 'Hãy đăng ký mẫu giọng nói để hệ thống nhận diện chính xác giọng của bạn khi chấm hội thoại.'}
-                </span>
-              </div>
-            )}
-
-            {profile.voice_sample_url && (
-              <div className="rounded-xl border border-white/10 bg-slate-950/60 p-3">
-                <div className="mb-1.5 text-[11px] font-medium text-slate-400">
-                  Bản thu âm mẫu hiện tại:
-                </div>
-                <audio controls src={profile.voice_sample_url} className="h-8 w-full" />
-              </div>
-            )}
+            <button
+              type="button"
+              onClick={() => setVoiceModalOpen(true)}
+              className={`inline-flex w-full items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition ${
+                voiceReady
+                  ? 'border border-white/15 bg-white/5 text-slate-200 hover:bg-white/10'
+                  : 'bg-sky-600 text-white hover:bg-sky-500 shadow-lg shadow-sky-600/25'
+              }`}
+            >
+              <Mic className="h-4 w-4" />
+              {voiceReady ? 'Cập nhật lại Mẫu Giọng Nói' : 'Đăng ký Mẫu Giọng Ngay'}
+            </button>
           </div>
-
-          <button
-            type="button"
-            onClick={() => setVoiceModalOpen(true)}
-            className={`inline-flex w-full items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition ${
-              voiceReady || isAdmin
-                ? 'border border-white/15 bg-white/5 text-slate-200 hover:bg-white/10'
-                : 'bg-sky-600 text-white hover:bg-sky-500 shadow-lg shadow-sky-600/25'
-            }`}
-          >
-            <Mic className="h-4 w-4" />
-            {voiceReady ? 'Cập nhật lại Mẫu Giọng Nói' : 'Đăng ký Mẫu Giọng Ngay'}
-          </button>
-        </div>
+        )}
       </div>
 
-      <VoiceEnrollModal
-        open={voiceModalOpen}
-        gpuUrl={gpuUrl}
-        userId={profile.id}
-        onClose={() => setVoiceModalOpen(false)}
-        onSaved={handleVoiceSaved}
-      />
+      {!isAdmin && (
+        <VoiceEnrollModal
+          open={voiceModalOpen}
+          gpuUrl={gpuUrl}
+          userId={profile.id}
+          onClose={() => setVoiceModalOpen(false)}
+          onSaved={handleVoiceSaved}
+        />
+      )}
     </div>
   );
 }

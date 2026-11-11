@@ -40,13 +40,13 @@ export function getNavItemsForRole(role: UserRole, isActive: boolean, pendingTea
     return [
       {
         id: 'overview',
-        label: 'Tổng quan & Duyệt GV',
+        label: 'Tổng quan',
         icon: 'overview',
         badge: pendingTeacherCount > 0 ? pendingTeacherCount : undefined,
       },
-      { id: 'users', label: 'Quản lý Tài khoản', icon: 'users' },
+      { id: 'users', label: 'Tài khoản & Lớp học', icon: 'users' },
       { id: 'content', label: 'Bộ đề & Hoạt động', icon: 'content' },
-      { id: 'classroom', label: 'Phân tích Lớp học', icon: 'classroom' },
+      { id: 'classroom', label: 'Phân tích tiết dạy', icon: 'classroom' },
       { id: 'profile', label: 'Hồ sơ cá nhân', icon: 'profile' },
     ];
   }
@@ -57,7 +57,7 @@ export function getNavItemsForRole(role: UserRole, isActive: boolean, pendingTea
       { id: 'students', label: 'Học viên của tôi', icon: 'students' },
       { id: 'questionsets', label: 'Bộ đề Speaking', icon: 'questionsets' },
       { id: 'assess', label: 'Chấm & Đánh giá', icon: 'assess' },
-      { id: 'classroom', label: 'Phân tích Lớp học', icon: 'classroom' },
+      { id: 'classroom', label: 'Phân tích tiết dạy', icon: 'classroom' },
       { id: 'profile', label: 'Hồ sơ cá nhân', icon: 'profile' },
     ];
   }
@@ -102,7 +102,7 @@ function getRoleBadge(role: UserRole) {
     return (
       <span className="inline-flex items-center gap-1 rounded-full border border-rose-500/35 bg-rose-500/15 px-2.5 py-0.5 text-[11px] font-semibold text-rose-300">
         <ShieldCheck className="h-3 w-3" />
-        Admin
+        Quản trị viên
       </span>
     );
   }
@@ -157,8 +157,8 @@ export function DashboardSidebar({
               <div className="text-lg font-extrabold leading-none tracking-tight text-white">
                 Speak<span className="text-sky-400">AI</span>
               </div>
-              <div className="mt-0.5 text-[10px] font-medium uppercase tracking-wider text-slate-400">
-                Speaking Eval
+              <div className="mt-0.5 text-[10px] font-medium text-slate-400">
+                Luyện nói Tiếng Anh
               </div>
             </div>
           </div>

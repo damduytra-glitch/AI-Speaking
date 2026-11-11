@@ -199,7 +199,7 @@ export function TeacherDashboard({
               </div>
               <div>
                 <div className="text-2xl font-extrabold text-emerald-300">{stats.avgScore}</div>
-                <div className="text-xs text-slate-400">Điểm TB 1-1</div>
+                <div className="text-xs text-slate-400">Điểm trung bình 1-1</div>
               </div>
             </div>
           </div>
@@ -273,7 +273,7 @@ export function TeacherDashboard({
                 className="flex w-full items-center justify-between rounded-xl border border-white/10 bg-slate-950/60 p-3.5 text-left hover:border-indigo-500/40 transition"
               >
                 <div>
-                  <div className="text-sm font-bold text-white">Biên soạn &amp; Publish Bộ đề</div>
+                  <div className="text-sm font-bold text-white">Biên soạn &amp; Mở Bộ đề</div>
                   <div className="text-xs text-slate-400">Quản lý đề Speaking cho học viên</div>
                 </div>
                 <BookOpen className="h-5 w-5 text-indigo-400" />

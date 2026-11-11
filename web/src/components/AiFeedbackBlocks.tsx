@@ -76,7 +76,7 @@ export function ComprehensiveAiFeedback({ aiEval, otf, scores }: ComprehensiveAi
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2 border-b border-white/10 pb-2.5">
           <div className="flex flex-wrap items-center gap-2">
             <Award className="h-5 w-5 text-amber-400" />
-            <span className="font-bold text-white">Đánh Giá Hội Thoại Chuẩn Quốc Tế</span>
+            <span className="font-bold text-white">Nhận Xét Cuộc Hội Thoại</span>
             <span className={`rounded-full border px-2.5 py-0.5 text-xs font-semibold ${bandInfo.badgeClass}`}>
               {bandInfo.band} · {bandInfo.level}
             </span>
@@ -84,12 +84,12 @@ export function ComprehensiveAiFeedback({ aiEval, otf, scores }: ComprehensiveAi
           {hasAi && !isFallback ? (
             <span className="inline-flex items-center gap-1 rounded-full border border-indigo-500/35 bg-indigo-500/15 px-2.5 py-0.5 text-xs font-medium text-indigo-300">
               <Sparkles className="h-3.5 w-3.5" />
-              AI Evaluator
+              Đánh giá AI
             </span>
           ) : (
             <span className="inline-flex items-center gap-1 rounded-full border border-white/15 bg-white/5 px-2.5 py-0.5 text-xs font-medium text-slate-300">
               <Cpu className="h-3.5 w-3.5" />
-              Âm học &amp; Heuristic
+              Đánh giá tự động
             </span>
           )}
         </div>
@@ -104,42 +104,30 @@ export function ComprehensiveAiFeedback({ aiEval, otf, scores }: ComprehensiveAi
 
       <div>
         <div className="mb-2 text-xs font-semibold uppercase tracking-wider text-slate-400">
-          Phân tích 4 Trụ Cột Đánh Giá (IELTS Speaking Rubric)
+          Chi tiết 4 tiêu chí đánh giá
         </div>
         <div className="grid grid-cols-2 gap-2.5 md:grid-cols-4">
           <div className="rounded-xl border border-white/10 bg-slate-950/70 p-3 text-center">
-            <span className="rounded bg-emerald-500/15 px-2 py-0.5 text-[10px] font-bold text-emerald-300">
-              PR (25%)
-            </span>
-            <div className="mt-1 text-xl font-bold text-emerald-400">{prScore}</div>
-            <div className="text-xs font-semibold text-white">Phát Âm &amp; Ngữ Điệu</div>
-            <div className="text-[11px] text-slate-400">SpeechOcean762</div>
+            <div className="text-xl font-bold text-emerald-400">{prScore}</div>
+            <div className="mt-1 text-xs font-semibold text-white">Phát Âm &amp; Ngữ Điệu</div>
+            <div className="text-[11px] text-slate-400">Độ chuẩn âm &amp; trôi chảy</div>
           </div>
 
           <div className="rounded-xl border border-white/10 bg-slate-950/70 p-3 text-center">
-            <span className="rounded bg-sky-500/15 px-2 py-0.5 text-[10px] font-bold text-sky-300">
-              FC (25%)
-            </span>
-            <div className="mt-1 text-xl font-bold text-sky-400">{fcScore}</div>
-            <div className="text-xs font-semibold text-white">Mạch Lạc &amp; Tương Tác</div>
-            <div className="text-[11px] text-slate-400">Phản xạ &amp; Mở rộng</div>
+            <div className="text-xl font-bold text-sky-400">{fcScore}</div>
+            <div className="mt-1 text-xs font-semibold text-white">Mạch Lạc &amp; Tương Tác</div>
+            <div className="text-[11px] text-slate-400">Phản xạ &amp; Mở rộng ý</div>
           </div>
 
           <div className="rounded-xl border border-white/10 bg-slate-950/70 p-3 text-center">
-            <span className="rounded bg-amber-500/15 px-2 py-0.5 text-[10px] font-bold text-amber-300">
-              LR (25%)
-            </span>
-            <div className="mt-1 text-xl font-bold text-amber-400">{lrScore}</div>
-            <div className="text-xs font-semibold text-white">Vốn Từ Vựng</div>
-            <div className="text-[11px] text-slate-400">Collocations</div>
+            <div className="text-xl font-bold text-amber-400">{lrScore}</div>
+            <div className="mt-1 text-xs font-semibold text-white">Vốn Từ Vựng</div>
+            <div className="text-[11px] text-slate-400">Đa dạng &amp; Tự nhiên</div>
           </div>
 
           <div className="rounded-xl border border-white/10 bg-slate-950/70 p-3 text-center">
-            <span className="rounded bg-indigo-500/15 px-2 py-0.5 text-[10px] font-bold text-indigo-300">
-              GRA (25%)
-            </span>
-            <div className="mt-1 text-xl font-bold text-indigo-400">{graScore}</div>
-            <div className="text-xs font-semibold text-white">Ngữ Pháp &amp; Cấu Trúc</div>
+            <div className="text-xl font-bold text-indigo-400">{graScore}</div>
+            <div className="mt-1 text-xs font-semibold text-white">Ngữ Pháp &amp; Cấu Trúc</div>
             <div className="text-[11px] text-slate-400">Chính xác &amp; Đa dạng</div>
           </div>
         </div>
@@ -194,7 +182,7 @@ export function ComprehensiveAiFeedback({ aiEval, otf, scores }: ComprehensiveAi
         <div className="clean-feedback-box">
           <div className="mb-1.5 flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-amber-300">
             <Waves className="h-4 w-4" />
-            Lưu ý Âm vị &amp; Phát âm (SpeechOcean &amp; L2-MDD)
+            Gợi ý cải thiện phát âm
           </div>
           <ul className="space-y-1 text-xs text-slate-200">
             {otfTips.map((tip, idx) => (
@@ -211,7 +199,7 @@ export function ComprehensiveAiFeedback({ aiEval, otf, scores }: ComprehensiveAi
         <div className="rounded-xl border border-white/10 bg-slate-950/70 p-3.5">
           <div className="mb-2 flex items-center gap-1.5 text-xs font-semibold text-emerald-300">
             <MessageSquareQuote className="h-4 w-4" />
-            Cách diễn đạt mẫu tự nhiên hơn (Native Expressions)
+            Cách diễn đạt mẫu tự nhiên hơn
           </div>
           <div className="space-y-1.5">
             {expressions.map((exp, idx) => (
@@ -333,16 +321,16 @@ export function DialogueTimeline({ turns }: { turns: DialogueTurn[] }) {
                 {hasScores && sc ? (
                   <div className="flex flex-wrap items-center gap-1.5 text-xs">
                     <span className="rounded-full bg-gradient-to-r from-indigo-600 to-sky-500 px-2.5 py-0.5 font-bold text-white shadow">
-                      Total: {(sc.total || 0).toFixed(1)}
+                      Tổng: {(sc.total || 0).toFixed(1)}
                     </span>
                     <span className="rounded-lg border border-white/10 bg-white/5 px-2 py-0.5 text-slate-300">
-                      Acc: {(sc.accuracy || 0).toFixed(1)}
+                      Phát âm: {(sc.accuracy || 0).toFixed(1)}
                     </span>
                     <span className="rounded-lg border border-white/10 bg-white/5 px-2 py-0.5 text-slate-300">
-                      Flu: {(sc.fluency || 0).toFixed(1)}
+                      Trôi chảy: {(sc.fluency || 0).toFixed(1)}
                     </span>
                     <span className="rounded-lg border border-white/10 bg-white/5 px-2 py-0.5 text-slate-300">
-                      Pro: {(sc.prosodic || 0).toFixed(1)}
+                      Ngữ điệu: {(sc.prosodic || 0).toFixed(1)}
                     </span>
                   </div>
                 ) : (
@@ -381,7 +369,7 @@ export function DialogueTimeline({ turns }: { turns: DialogueTurn[] }) {
                 <div className="clean-feedback-box mt-2.5">
                   <div className="mb-1.5 flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-amber-300">
                     <Waves className="h-3.5 w-3.5" />
-                    Lưu ý phát âm (L2-MDD &amp; ASHA)
+                    Gợi ý sửa phát âm
                   </div>
                   <div className="space-y-1 text-xs text-slate-200">
                     {feedbackItems.map((fi, fIdx) => (

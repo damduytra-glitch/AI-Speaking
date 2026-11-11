@@ -28,11 +28,16 @@ export function parseVoiceEmbeddings(user?: Partial<Profile> | null): number[] |
 }
 
 export function translateAuthError(msg?: string | null): string {
-  if (!msg) return 'Lỗi không xác định.';
+  if (!msg) return 'Đã xảy ra lỗi. Vui lòng thử lại.';
   const m = msg.toLowerCase();
   if (m.includes('invalid login credentials')) return 'Email hoặc mật khẩu không chính xác.';
   if (m.includes('user already registered')) return 'Email này đã được đăng ký.';
   if (m.includes('password should be at least')) return 'Mật khẩu phải có ít nhất 6 ký tự.';
+  if (m.includes('email not confirmed')) return 'Vui lòng xác thực email trong hộp thư trước khi đăng nhập.';
+  if (m.includes('unable to validate email') || m.includes('invalid email')) return 'Địa chỉ email không hợp lệ.';
+  if (m.includes('rate limit') || m.includes('too many requests') || m.includes('security purposes')) {
+    return 'Bạn thao tác quá nhanh, vui lòng đợi ít phút rồi thử lại.';
+  }
   return msg;
 }
 
@@ -125,8 +130,41 @@ export function formatDurationReadable(sec?: number | null): string {
   const rem = Math.round(s % 60);
   const hrs = Math.floor(mins / 60);
   const m = mins % 60;
-  if (hrs > 0) return `${hrs}g ${String(m).padStart(2, '0')}p ${String(rem).padStart(2, '0')}s (${s.toFixed(0)}s)`;
-  return `${mins}p ${String(rem).padStart(2, '0')}s (${s.toFixed(1)}s)`;
+  if (hrs > 0) return `${hrs}g ${String(m).padStart(2, '0')}p ${String(rem).padStart(2, '0')}s`;
+  return `${mins}p ${String(rem).padStart(2, '0')}s`;
+}
+
+export function getLevelLabel(level?: string | null): string {
+  const map: Record<string, string> = {
+    beginner: 'Cơ bản',
+    intermediate: 'Trung cấp',
+    advanced: 'Nâng cao',
+  };
+  const key = (level || '').trim().toLowerCase();
+  return map[key] || level || 'Chưa phân loại';
+}
+
+export function formatFriendlyStep(step?: string | null): string {
+  if (!step) return 'Đang xử lý...';
+  const s = step.toLowerCase();
+  if (s.includes('hàng đợi') || s.includes('khởi tạo')) return 'Đang chờ xử lý...';
+  if (s.includes('chuẩn hóa')) return 'Đang chuẩn bị bản ghi âm...';
+  if (s.includes('embedding') || s.includes('tách') || s.includes('diarization')) {
+    return 'Đang nhận diện giọng nói...';
+  }
+  if (s.includes('mô hình') || s.includes('speechocean') || s.includes('mdd') || s.includes('2 models')) {
+    return 'Đang chấm điểm phát âm...';
+  }
+  if (s.includes('whisper') || s.includes('en/vi') || s.includes('ngôn ngữ')) {
+    return 'Đang phân tích nội dung và ngôn ngữ...';
+  }
+  if (s.includes('single speaker') || s.includes('vad') || s.includes('giọng nói')) {
+    return 'Đang phân tích giọng nói...';
+  }
+  if (s.includes('tổng hợp') || s.includes('lưu') || s.includes('hoàn tất')) {
+    return 'Đang tổng hợp kết quả...';
+  }
+  return step.replace(/\([^)]*\)/g, '').trim() || 'Đang xử lý...';
 }
 
 export function formatTimestamp(sec?: number | null): string {

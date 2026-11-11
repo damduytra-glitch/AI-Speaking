@@ -136,7 +136,7 @@ export function VoiceEnrollModal({
   const handleToggleRecord = async (idx: number) => {
     setModalError(null);
     if (!gpuUrl.trim()) {
-      setModalError('Chưa có GPU Backend URL. Vui lòng nhờ Admin cấu hình GPU Tunnel URL trước.');
+      setModalError('Tính năng nhận diện giọng nói hiện chưa sẵn sàng. Bạn có thể bỏ qua bước này và cập nhật sau trong Hồ sơ.');
       return;
     }
 
@@ -219,7 +219,7 @@ export function VoiceEnrollModal({
             }),
           );
         } catch (err) {
-          const msg = err instanceof Error ? err.message : 'Lỗi trích xuất giọng';
+          const msg = err instanceof Error ? err.message : 'Không thể ghi nhận mẫu giọng. Vui lòng thử lại.';
           setSentences((prev) =>
             prev.map((item, i) =>
               i === idx
@@ -248,7 +248,7 @@ export function VoiceEnrollModal({
     setModalError(null);
     if (!files || files.length === 0) return;
     if (!gpuUrl.trim()) {
-      setModalError('Chưa có GPU Backend URL. Vui lòng nhờ Admin cấu hình GPU Tunnel URL trước.');
+      setModalError('Tính năng nhận diện giọng nói hiện chưa sẵn sàng. Bạn có thể bỏ qua bước này và cập nhật sau trong Hồ sơ.');
       return;
     }
 
@@ -281,7 +281,7 @@ export function VoiceEnrollModal({
         setUploadedEmbeddings(embs);
         setUploadStatus({
           state: 'ready',
-          message: 'Đã trích xuất 1 mẫu giọng gốc thành công.',
+          message: 'Đã ghi nhận 1 mẫu giọng nói thành công.',
         });
       } else {
         let totalSim = 0;
@@ -371,10 +371,10 @@ export function VoiceEnrollModal({
       title={
         <span className="flex items-center gap-2">
           <Mic className="h-5 w-5 text-indigo-400" />
-          Đăng ký Mẫu Giọng Nói (ERes2Net)
+          Đăng ký Mẫu Giọng Nói
         </span>
       }
-      subtitle="Hệ thống sử dụng mẫu giọng này để nhận diện và tách chính xác giọng nói của bạn khi chấm điểm."
+      subtitle="Hệ thống sử dụng mẫu giọng này để nhận diện và phân biệt chính xác giọng nói của bạn khi chấm điểm."
       footer={
         <>
           {allowSkip && onSkip && (
@@ -429,7 +429,7 @@ export function VoiceEnrollModal({
         <div className="mb-4 flex items-start gap-2.5 rounded-xl border border-amber-500/40 bg-amber-500/10 p-3 text-xs text-amber-200">
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-400" />
           <span>
-            Máy chủ AI GPU hiện chưa có URL Tunnel công khai. Bạn vẫn có thể bỏ qua bước này và thu âm lại sau khi Admin bật server GPU.
+            Tính năng nhận diện giọng nói hiện đang tạm ngoại tuyến. Bạn vẫn có thể bỏ qua bước này và thu âm lại sau trong Hồ sơ cá nhân.
           </span>
         </div>
       )}
@@ -499,7 +499,7 @@ export function VoiceEnrollModal({
                         {st?.processing ? (
                           <>
                             <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                            Đang trích xuất...
+                            Đang xử lý...
                           </>
                         ) : st?.recording ? (
                           <>

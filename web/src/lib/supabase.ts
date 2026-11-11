@@ -22,9 +22,7 @@ let clientInstance: SupabaseClient | null = null;
 
 export function getSupabaseClient(): SupabaseClient {
   if (!isSupabaseConfigured) {
-    throw new Error(
-      'Chưa cấu hình SUPABASE_URL / SUPABASE_ANON_KEY. Vui lòng thiết lập biến môi trường trên Vercel hoặc trong file .env.',
-    );
+    throw new Error('Hệ thống đang bảo trì kết nối dữ liệu. Vui lòng thử lại sau.');
   }
   if (!clientInstance) {
     clientInstance = createClient(APP_CONFIG.SUPABASE_URL, APP_CONFIG.SUPABASE_ANON_KEY);

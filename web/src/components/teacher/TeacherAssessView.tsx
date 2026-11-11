@@ -26,6 +26,7 @@ import {
   uploadConversationAudio,
 } from '@/lib/teacher';
 import {
+  formatFriendlyStep,
   formatScoreValue,
   getIeltsBandLabel,
   hasVoiceEnrolled,
@@ -142,7 +143,7 @@ export function TeacherAssessView({
 
   const handleRunAssessment = async () => {
     if (!gpuUrl.trim()) {
-      showToast('Chưa cấu hình GPU Backend URL! Vui lòng liên hệ Admin.', 'danger');
+      showToast('Hệ thống chấm điểm hiện chưa sẵn sàng. Vui lòng thử lại sau.', 'danger');
       return;
     }
     if (!teacherEmb) {
@@ -167,7 +168,7 @@ export function TeacherAssessView({
     setAnalysisResult(null);
     setAiEval(null);
     setSpeakerView('student');
-    setStepLabel('Đang gửi audio hội thoại lên GPU Server...');
+    setStepLabel('Đang tải bản ghi hội thoại lên để phân tích...');
 
     try {
       let uploadedUrl = '';
@@ -198,7 +199,9 @@ export function TeacherAssessView({
         detail?: string;
       };
       if (!startRes.ok || !startJson.success || !startJson.task_id) {
-        throw new Error(startJson.error || startJson.detail || `Lỗi API (${startRes.status})`);
+        throw new Error(
+          startJson.error || startJson.detail || 'Không thể gửi bản ghi âm để chấm điểm. Vui lòng thử lại.',
+        );
       }
 
       const taskId = startJson.task_id;
@@ -218,20 +221,20 @@ export function TeacherAssessView({
           throw new Error(pollJson.error || pollJson.detail || 'Lỗi kiểm tra tiến độ chấm bài');
         }
         const task = pollJson.data || {};
-        if (task.step) setStepLabel(task.step);
+        if (task.step) setStepLabel(formatFriendlyStep(task.step));
         if (task.status === 'completed' && task.result) {
           gpuResult = task.result;
           break;
         }
         if (task.status === 'error') {
-          throw new Error(task.error || 'GPU Server trả về lỗi xử lý');
+          throw new Error(task.error || 'Không thể xử lý bản ghi âm. Vui lòng thử lại.');
         }
       }
 
       const draft = await createAssessment(currentUser.id, selectedStudent.id, uploadedUrl);
       setDraftId(draft.id);
 
-      setStepLabel('Đang chạy AI Evaluator chấm 4 trụ cột IELTS cho Học viên...');
+      setStepLabel('Đang tổng hợp điểm số và nhận xét chi tiết cho Học viên...');
       const turns: DialogueTurn[] = gpuResult.dialogue?.turns || gpuResult.turns || [];
       const baseScores: Partial<PronunciationScores> = gpuResult.student?.scores || {
         total: 0,
@@ -381,7 +384,7 @@ export function TeacherAssessView({
             Chấm &amp; Đánh giá Hội thoại 1-1
           </h2>
           <p className="mt-1 text-sm text-slate-400">
-            Tách giọng Giáo viên – Học viên từ audio buổi học 1-1, chấm 4 trụ cột IELTS và quản lý lịch sử đánh giá.
+            Tải lên bản ghi hội thoại 1-1 để AI nhận diện giọng nói, chấm điểm và lưu lịch sử đánh giá.
           </p>
         </div>
 
@@ -462,7 +465,7 @@ export function TeacherAssessView({
                   onChange={(e) => handleSelectFile(e.target.files?.[0])}
                 />
                 <CloudUpload className="mx-auto mb-2 h-9 w-9 text-indigo-400" />
-                <p className="text-sm font-semibold text-white">Kéo thả hoặc chọn file audio</p>
+                <p className="text-sm font-semibold text-white">Kéo thả hoặc chọn file âm thanh</p>
                 <p className="mt-1 text-xs text-slate-400">WAV, MP3, WEBM, M4A (&lt; 300MB)</p>
               </div>
 
@@ -589,7 +592,7 @@ export function TeacherAssessView({
 
                 <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
                   <div className="rounded-xl border border-indigo-500/40 bg-indigo-500/15 p-3.5 text-center">
-                    <div className="text-xs text-slate-300">Overall</div>
+                    <div className="text-xs text-slate-300">Điểm tổng</div>
                     <div
                       className={`mt-1 inline-block rounded-lg border px-3 py-0.5 text-2xl font-extrabold ${scoreBadgeBgClass(
                         activeScores.total,
@@ -603,25 +606,25 @@ export function TeacherAssessView({
                   </div>
 
                   <div className="rounded-xl border border-white/10 bg-slate-950/60 p-3.5 text-center">
-                    <div className="text-xs text-slate-400">Phát âm (PR)</div>
+                    <div className="text-xs text-slate-400">Phát âm</div>
                     <div className="mt-1 text-2xl font-bold text-emerald-400">
                       {activeScores.pr.toFixed(1)}
                     </div>
                   </div>
                   <div className="rounded-xl border border-white/10 bg-slate-950/60 p-3.5 text-center">
-                    <div className="text-xs text-slate-400">Mạch lạc (FC)</div>
+                    <div className="text-xs text-slate-400">Mạch lạc</div>
                     <div className="mt-1 text-2xl font-bold text-sky-400">
                       {formatScoreValue(activeScores.fc)}
                     </div>
                   </div>
                   <div className="rounded-xl border border-white/10 bg-slate-950/60 p-3.5 text-center">
-                    <div className="text-xs text-slate-400">Từ vựng (LR)</div>
+                    <div className="text-xs text-slate-400">Từ vựng</div>
                     <div className="mt-1 text-2xl font-bold text-amber-400">
                       {formatScoreValue(activeScores.lr)}
                     </div>
                   </div>
                   <div className="rounded-xl border border-white/10 bg-slate-950/60 p-3.5 text-center">
-                    <div className="text-xs text-slate-400">Ngữ pháp (GRA)</div>
+                    <div className="text-xs text-slate-400">Ngữ pháp</div>
                     <div className="mt-1 text-2xl font-bold text-indigo-400">
                       {formatScoreValue(activeScores.gra)}
                     </div>

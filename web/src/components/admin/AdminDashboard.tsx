@@ -6,12 +6,10 @@ import {
   AlertTriangle,
   BookOpen,
   CheckCircle2,
-  Cpu,
   Eye,
   EyeOff,
   FolderKanban,
   GraduationCap,
-  KeyRound,
   Link2,
   Loader2,
   Lock,
@@ -31,7 +29,13 @@ import { getSupabaseClient } from '@/lib/supabase';
 import { adminUpdateUser, deleteUserByAdmin, updateGlobalGpuUrl } from '@/lib/auth';
 import { setRuntimeGpuUrl } from '@/lib/aiEval';
 import { deleteQuestionSet, togglePublishSet } from '@/lib/questionSets';
-import { formatScoreValue, getAvatarUrl, getExamTypeName, hasVoiceEnrolled } from '@/lib/utils';
+import {
+  formatScoreValue,
+  getAvatarUrl,
+  getExamTypeName,
+  getLevelLabel,
+  hasVoiceEnrolled,
+} from '@/lib/utils';
 import { Modal } from '@/components/ui/Modal';
 import { useToast } from '@/components/ToastProvider';
 import { AssessmentDetailModal } from '@/components/AssessmentDetailModal';
@@ -190,7 +194,7 @@ export function AdminDashboard({
     const clean = targetUrl.trim().replace(/\/+$/, '');
     if (!clean) {
       setHealthData(null);
-      setHealthError('Chưa cấu hình URL Tunnel GPU Server.');
+      setHealthError('Chưa thiết lập kết nối dịch vụ AI.');
       return;
     }
 
@@ -203,7 +207,7 @@ export function AdminDashboard({
         method: 'GET',
         signal: controller.signal,
       });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      if (!res.ok) throw new Error('offline');
       const json = (await res.json()) as GpuHealthData & { data?: GpuHealthData };
       const parsed = json.data ? json.data : json;
       setHealthData(parsed);
@@ -211,8 +215,8 @@ export function AdminDashboard({
       setHealthData(null);
       setHealthError(
         err instanceof Error && err.name === 'AbortError'
-          ? 'Hết thời gian kết nối /health (7s). Kiểm tra lại Kaggle GPU Tunnel.'
-          : `Không kết nối được tới ${clean}/health`,
+          ? 'Dịch vụ AI tạm thời không phản hồi. Vui lòng kiểm tra lại.'
+          : 'Dịch vụ AI hiện chưa kết nối.',
       );
     } finally {
       window.clearTimeout(timer);
@@ -395,7 +399,7 @@ export function AdminDashboard({
         prev.map((item) => (item.id === qs.id ? { ...item, is_published: !qs.is_published } : item)),
       );
       showToast(
-        !qs.is_published ? `Đã mở Publish bộ đề "${qs.title}".` : `Đã ẩn bộ đề "${qs.title}".`,
+        !qs.is_published ? `Đã mở bộ đề "${qs.title}".` : `Đã ẩn bộ đề "${qs.title}".`,
         'success',
       );
     } catch (err) {
@@ -427,10 +431,10 @@ export function AdminDashboard({
       setRuntimeGpuUrl(cleaned);
       onGpuUrlChange(cleaned);
       setGpuModalOpen(false);
-      showToast('Đã cập nhật GPU Tunnel URL toàn hệ thống!', 'success');
+      showToast('Đã cập nhật kết nối dịch vụ AI!', 'success');
       await checkGpuHealth(cleaned);
     } catch (err) {
-      showToast(err instanceof Error ? err.message : 'Lỗi lưu GPU URL', 'danger');
+      showToast(err instanceof Error ? err.message : 'Lỗi lưu kết nối dịch vụ AI', 'danger');
     } finally {
       setSavingGpuUrl(false);
     }
@@ -452,9 +456,9 @@ export function AdminDashboard({
         <div className="space-y-6">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
-              <h2 className="text-2xl font-bold text-white">Tổng quan Hệ thống &amp; Duyệt Giáo viên</h2>
+              <h2 className="text-2xl font-bold text-white">Tổng quan Hệ thống</h2>
               <p className="mt-1 text-sm text-slate-400">
-                Giám sát chỉ số cốt lõi, phê duyệt giáo viên mới và kết nối GPU AI Server.
+                Theo dõi tình hình sử dụng và phê duyệt tài khoản giáo viên mới.
               </p>
             </div>
             <button
@@ -577,79 +581,50 @@ export function AdminDashboard({
               )}
             </div>
 
-            {/* GPU Health Monitor (URL Only — NO AI API Key UI) */}
-            <div className="section-card lg:col-span-5 space-y-4">
-              <div className="flex items-center justify-between gap-2 border-b border-white/10 pb-3">
-                <h3 className="flex items-center gap-2 text-base font-bold text-white">
-                  <Server className="h-5 w-5 text-sky-400" />
-                  Máy chủ AI GPU (/health)
-                </h3>
-                <button
-                  type="button"
-                  onClick={() => checkGpuHealth(gpuUrl)}
-                  disabled={healthLoading}
-                  className="inline-flex items-center gap-1 rounded-lg border border-white/15 bg-white/5 px-2.5 py-1 text-xs text-slate-200 hover:bg-white/10"
-                >
-                  <RefreshCw className={`h-3 w-3 ${healthLoading ? 'animate-spin' : ''}`} />
-                  Kiểm tra
-                </button>
-              </div>
-
-              <div className="rounded-xl border border-white/10 bg-slate-950/60 p-3 text-xs space-y-1.5">
-                <div className="text-slate-400">GPU Tunnel URL đang dùng:</div>
-                <div className="truncate font-mono text-sky-300">
-                  {gpuUrl || 'Chưa cấu hình URL'}
+            {/* Service Status Card */}
+            <div className="section-card lg:col-span-5 flex flex-col justify-between space-y-4">
+              <div className="space-y-4">
+                <div className="flex items-center justify-between gap-2 border-b border-white/10 pb-3">
+                  <h3 className="flex items-center gap-2 text-base font-bold text-white">
+                    <Server className="h-5 w-5 text-sky-400" />
+                    Trạng thái Dịch vụ AI
+                  </h3>
+                  <button
+                    type="button"
+                    onClick={() => checkGpuHealth(gpuUrl)}
+                    disabled={healthLoading}
+                    className="inline-flex items-center gap-1 rounded-lg border border-white/15 bg-white/5 px-2.5 py-1 text-xs text-slate-200 hover:bg-white/10"
+                  >
+                    <RefreshCw className={`h-3 w-3 ${healthLoading ? 'animate-spin' : ''}`} />
+                    Kiểm tra
+                  </button>
                 </div>
-              </div>
 
-              {healthLoading ? (
-                <div className="flex items-center gap-2 rounded-xl border border-white/10 bg-slate-950/50 p-4 text-xs text-slate-300">
-                  <Loader2 className="h-4 w-4 animate-spin text-sky-400" />
-                  Đang kiểm tra trạng thái /health...
-                </div>
-              ) : healthData ? (
-                <div className="rounded-xl border border-emerald-500/35 bg-emerald-500/10 p-3.5 text-xs space-y-2">
-                  <div className="flex items-center justify-between font-bold text-emerald-300">
-                    <span className="flex items-center gap-1.5">
-                      <Cpu className="h-4 w-4" />
-                      Trực tuyến ({healthData.status || 'ok'})
-                    </span>
-                    {healthData.uptime_human && (
-                      <span className="font-mono text-[11px] text-emerald-200">
-                        Up {healthData.uptime_human}
-                      </span>
-                    )}
+                {healthLoading ? (
+                  <div className="flex items-center gap-2 rounded-xl border border-white/10 bg-slate-950/50 p-4 text-xs text-slate-300">
+                    <Loader2 className="h-4 w-4 animate-spin text-sky-400" />
+                    Đang kiểm tra kết nối dịch vụ AI...
                   </div>
-                  <div className="grid grid-cols-2 gap-2 text-slate-200">
-                    <div>
-                      GPU:{' '}
-                      <strong>{healthData.gpu?.device_name || (healthData.gpu?.available ? 'CUDA' : 'CPU')}</strong>
+                ) : healthData ? (
+                  <div className="rounded-xl border border-emerald-500/35 bg-emerald-500/10 p-4 text-xs space-y-1.5">
+                    <div className="flex items-center gap-2 font-bold text-emerald-300">
+                      <CheckCircle2 className="h-4 w-4 shrink-0" />
+                      <span>Sẵn sàng hoạt động</span>
                     </div>
+                    <p className="leading-relaxed text-emerald-100/80">
+                      Hệ thống chấm phát âm, nhận diện giọng nói và đánh giá hội thoại đang kết nối ổn định.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="flex items-start gap-2 rounded-xl border border-amber-500/35 bg-amber-500/10 p-4 text-xs text-amber-200">
+                    <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-400" />
                     <div>
-                      VRAM:{' '}
-                      <strong>
-                        {healthData.gpu?.memory_allocated_mb != null
-                          ? `${Math.round(healthData.gpu.memory_allocated_mb)}/${Math.round(
-                              healthData.gpu.memory_total_mb || 0,
-                            )} MB`
-                          : '--'}
-                      </strong>
-                    </div>
-                    <div>
-                      Đang xử lý: <strong>{healthData.tasks_active ?? 0}</strong> (Chờ:{' '}
-                      {healthData.gpu_queue_waiting ?? 0})
-                    </div>
-                    <div>
-                      Đã xong: <strong>{healthData.tasks_completed ?? 0}</strong>
+                      <div className="font-semibold text-amber-300">Chưa kết nối</div>
+                      <p className="mt-0.5">{healthError || 'Dịch vụ AI hiện chưa sẵn sàng.'}</p>
                     </div>
                   </div>
-                </div>
-              ) : (
-                <div className="flex items-start gap-2 rounded-xl border border-amber-500/35 bg-amber-500/10 p-3.5 text-xs text-amber-200">
-                  <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-400" />
-                  <span>{healthError || 'Chưa kết nối được tới máy chủ GPU.'}</span>
-                </div>
-              )}
+                )}
+              </div>
 
               <button
                 type="button"
@@ -657,15 +632,11 @@ export function AdminDashboard({
                   setGpuUrlDraft(gpuUrl);
                   setGpuModalOpen(true);
                 }}
-                className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-indigo-600 px-4 py-2.5 text-xs font-semibold text-white hover:bg-indigo-500 transition"
+                className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-white/15 bg-white/5 px-4 py-2.5 text-xs font-semibold text-slate-200 hover:bg-white/10 transition"
               >
                 <Link2 className="h-4 w-4" />
-                Cập nhật GPU Tunnel URL
+                Cập nhật địa chỉ máy chủ
               </button>
-
-              <p className="text-[11px] leading-relaxed text-slate-400">
-                Cấu hình AI Evaluator API Key sử dụng biến môi trường bảo mật tại Backend (<code className="font-mono text-slate-300">/api/ai-eval</code>).
-              </p>
             </div>
           </div>
         </div>
@@ -702,7 +673,7 @@ export function AdminDashboard({
               className="rounded-xl border border-white/15 bg-slate-950/75 px-3 py-2 text-sm text-white focus:border-indigo-500 focus:outline-none"
             >
               <option value="">Tất cả vai trò</option>
-              <option value="admin">Admin</option>
+              <option value="admin">Quản trị viên</option>
               <option value="teacher">Giáo viên</option>
               <option value="student">Học viên</option>
             </select>
@@ -779,7 +750,7 @@ export function AdminDashboard({
                           <td className="px-4 py-3">
                             {u.role === 'admin' ? (
                               <span className="inline-flex items-center gap-1 rounded-full border border-rose-500/35 bg-rose-500/15 px-2.5 py-0.5 text-rose-300 font-semibold">
-                                <ShieldCheck className="h-3 w-3" /> Admin
+                                <ShieldCheck className="h-3 w-3" /> Quản trị viên
                               </span>
                             ) : u.role === 'teacher' ? (
                               <span className="inline-flex items-center gap-1 rounded-full border border-indigo-500/35 bg-indigo-500/15 px-2.5 py-0.5 text-indigo-300 font-semibold">
@@ -875,10 +846,10 @@ export function AdminDashboard({
           <div>
             <h2 className="flex items-center gap-2.5 text-2xl font-bold text-white">
               <FolderKanban className="h-6 w-6 text-indigo-400" />
-              Giám sát Bộ đề &amp; Nhật ký Hoạt động
+              Bộ đề &amp; Nhật ký Hoạt động
             </h2>
             <p className="mt-1 text-sm text-slate-400">
-              Kiểm duyệt trạng thái Publish bộ đề và theo dõi hợp nhất các lượt Chấm hội thoại 1-1, Luyện tập và Thi thử.
+              Quản lý trạng thái mở/ẩn bộ đề và theo dõi hoạt động chấm hội thoại 1-1, luyện tập, thi thử.
             </p>
           </div>
 
@@ -887,7 +858,7 @@ export function AdminDashboard({
             <div className="flex flex-wrap items-center justify-between gap-3">
               <h3 className="flex items-center gap-2 text-base font-bold text-white">
                 <BookOpen className="h-5 w-5 text-sky-400" />
-                Kiểm duyệt Bộ đề Speaking ({filteredSets.length}/{questionSets.length})
+                Bộ đề Speaking ({filteredSets.length}/{questionSets.length})
               </h3>
               <div className="flex flex-wrap gap-2">
                 <div className="relative">
@@ -906,8 +877,8 @@ export function AdminDashboard({
                   className="rounded-xl border border-white/15 bg-slate-950/75 px-3 py-1.5 text-xs text-white focus:border-indigo-500 focus:outline-none"
                 >
                   <option value="">Tất cả trạng thái</option>
-                  <option value="published">Đang Publish</option>
-                  <option value="draft">Bản nháp (Ẩn)</option>
+                  <option value="published">Đang mở</option>
+                  <option value="draft">Đang ẩn</option>
                 </select>
               </div>
             </div>
@@ -936,7 +907,7 @@ export function AdminDashboard({
                         <td className="px-4 py-2.5">
                           <div className="font-semibold text-white">{qs.title}</div>
                           <div className="text-[11px] text-slate-400">
-                            {getExamTypeName(qs.exam_type)} · {qs.level}
+                            {getExamTypeName(qs.exam_type)} · {getLevelLabel(qs.level)}
                           </div>
                         </td>
                         <td className="px-4 py-2.5 text-slate-300">{qs.creator_name}</td>
@@ -944,11 +915,11 @@ export function AdminDashboard({
                         <td className="px-4 py-2.5">
                           {qs.is_published ? (
                             <span className="inline-flex items-center gap-1 rounded-full border border-emerald-500/35 bg-emerald-500/15 px-2 py-0.5 text-emerald-300 font-semibold">
-                              <Eye className="h-3 w-3" /> Published
+                              <Eye className="h-3 w-3" /> Đang mở
                             </span>
                           ) : (
                             <span className="inline-flex items-center gap-1 rounded-full border border-white/15 bg-white/5 px-2 py-0.5 text-slate-400 font-semibold">
-                              <EyeOff className="h-3 w-3" /> Nháp
+                              <EyeOff className="h-3 w-3" /> Đang ẩn
                             </span>
                           )}
                         </td>
@@ -965,7 +936,7 @@ export function AdminDashboard({
                                 </>
                               ) : (
                                 <>
-                                  <Unlock className="h-3 w-3" /> Publish
+                                  <Unlock className="h-3 w-3" /> Mở đề
                                 </>
                               )}
                             </button>
@@ -1012,8 +983,8 @@ export function AdminDashboard({
                 >
                   <option value="">Tất cả loại hoạt động</option>
                   <option value="1-1">Chấm hội thoại 1-1</option>
-                  <option value="practice">Luyện tập (Practice)</option>
-                  <option value="exam">Thi thử (Exam)</option>
+                  <option value="practice">Luyện tập</option>
+                  <option value="exam">Thi thử</option>
                 </select>
               </div>
             </div>
@@ -1091,31 +1062,31 @@ export function AdminDashboard({
         <ClassroomAnalysisView mode="admin" profiles={users} gpuUrl={gpuUrl} />
       )}
 
-      {/* MODAL: Update GPU Tunnel URL Only */}
+      {/* MODAL: Update AI Server URL */}
       <Modal
         open={gpuModalOpen}
         onClose={() => setGpuModalOpen(false)}
         maxWidthClass="max-w-lg"
         title={
           <span className="flex items-center gap-2">
-            <KeyRound className="h-5 w-5 text-sky-400" />
-            Cập nhật GPU Backend Tunnel URL
+            <Link2 className="h-5 w-5 text-sky-400" />
+            Cập nhật Kết nối Dịch vụ AI
           </span>
         }
-        subtitle="URL công khai của server Kaggle / Cloudflare Tunnel đang chạy model SpeechOcean & ERes2Net."
+        subtitle="Nhập địa chỉ mới khi hệ thống xử lý AI được chuyển sang máy chủ khác."
       >
         <form onSubmit={handleSaveGpuUrl} className="space-y-4">
           <div>
             <label className="mb-1.5 block text-xs font-semibold text-slate-300">
-              GPU Server Base URL
+              Địa chỉ máy chủ AI
             </label>
             <input
               type="url"
               required
               value={gpuUrlDraft}
               onChange={(e) => setGpuUrlDraft(e.target.value)}
-              placeholder="https://xxxx.trycloudflare.com"
-              className="w-full rounded-xl border border-white/15 bg-slate-950/75 px-3.5 py-2.5 font-mono text-sm text-white placeholder-slate-500 focus:border-indigo-500 focus:outline-none"
+              placeholder="https://..."
+              className="w-full rounded-xl border border-white/15 bg-slate-950/75 px-3.5 py-2.5 text-sm text-white placeholder-slate-500 focus:border-indigo-500 focus:outline-none"
             />
           </div>
 
@@ -1133,7 +1104,7 @@ export function AdminDashboard({
               className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2 text-xs font-semibold text-white hover:bg-indigo-500 disabled:opacity-50"
             >
               {savingGpuUrl && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-              Lưu &amp; Kiểm tra kết nối
+              Lưu &amp; Kiểm tra
             </button>
           </div>
         </form>
@@ -1164,7 +1135,7 @@ export function AdminDashboard({
               >
                 <option value="student">Học viên</option>
                 <option value="teacher">Giáo viên</option>
-                <option value="admin">Admin</option>
+                <option value="admin">Quản trị viên</option>
               </select>
             </div>
 

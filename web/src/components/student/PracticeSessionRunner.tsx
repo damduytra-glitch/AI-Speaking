@@ -355,7 +355,7 @@ export function PracticeSessionRunner({
   const handleSubmitPracticeAnswer = async () => {
     if (!currentQuestion || !recordedBlob) return;
     if (!gpuUrl.trim()) {
-      showToast('Chưa cấu hình GPU Backend URL! Vui lòng liên hệ Admin.', 'danger');
+      showToast('Hệ thống chấm điểm hiện chưa sẵn sàng. Vui lòng thử lại sau.', 'danger');
       return;
     }
 
@@ -555,7 +555,7 @@ export function PracticeSessionRunner({
 
   const handleStartExam = () => {
     if (!gpuUrl.trim()) {
-      showToast('Chưa cấu hình GPU Backend URL! Vui lòng liên hệ Admin.', 'danger');
+      showToast('Hệ thống chấm điểm hiện chưa sẵn sàng. Vui lòng thử lại sau.', 'danger');
       return;
     }
     const firstQ = questions[0];
@@ -629,31 +629,31 @@ export function PracticeSessionRunner({
               <div className="text-2xl font-extrabold text-white">
                 {summaryTotals.score_total.toFixed(1)}
               </div>
-              <div className="text-[11px] text-slate-400">Overall / 10</div>
+              <div className="text-[11px] text-slate-400">Điểm tổng / 10</div>
             </div>
             <div className="rounded-xl border border-white/10 bg-slate-950/60 p-3">
               <div className="text-xl font-bold text-emerald-400">
                 {summaryTotals.score_accuracy.toFixed(1)}
               </div>
-              <div className="text-[11px] text-slate-400">Phát âm (PR)</div>
+              <div className="text-[11px] text-slate-400">Phát âm</div>
             </div>
             <div className="rounded-xl border border-white/10 bg-slate-950/60 p-3">
               <div className="text-xl font-bold text-sky-400">
                 {formatScoreValue(summaryTotals.score_context)}
               </div>
-              <div className="text-[11px] text-slate-400">Mạch lạc (FC)</div>
+              <div className="text-[11px] text-slate-400">Mạch lạc</div>
             </div>
             <div className="rounded-xl border border-white/10 bg-slate-950/60 p-3">
               <div className="text-xl font-bold text-amber-400">
                 {formatScoreValue(summaryTotals.score_lexical)}
               </div>
-              <div className="text-[11px] text-slate-400">Từ vựng (LR)</div>
+              <div className="text-[11px] text-slate-400">Từ vựng</div>
             </div>
             <div className="rounded-xl border border-white/10 bg-slate-950/60 p-3">
               <div className="text-xl font-bold text-indigo-400">
                 {formatScoreValue(summaryTotals.score_grammar)}
               </div>
-              <div className="text-[11px] text-slate-400">Ngữ pháp (GRA)</div>
+              <div className="text-[11px] text-slate-400">Ngữ pháp</div>
             </div>
           </div>
 
@@ -717,7 +717,7 @@ export function PracticeSessionRunner({
         <Loader2 className="mx-auto h-10 w-10 animate-spin text-indigo-400" />
         <h3 className="text-lg font-bold text-white">Đang tổng hợp &amp; chấm điểm bài thi...</h3>
         <p className="text-sm text-slate-400">
-          Hệ thống AI đang chấm phát âm SpeechOcean và đánh giá 4 trụ cột IELTS cho tất cả các câu trả lời của bạn.
+          Hệ thống AI đang chấm phát âm, ngữ pháp và nội dung cho tất cả các câu trả lời của bạn.
         </p>
       </div>
     );
@@ -1048,31 +1048,31 @@ export function PracticeSessionRunner({
 
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
             <div className="rounded-xl border border-indigo-500/35 bg-indigo-500/15 p-3 text-center">
-              <div className="text-[11px] text-slate-300">Overall</div>
+              <div className="text-[11px] text-slate-300">Điểm tổng</div>
               <div className={`text-2xl font-extrabold ${scoreTextColorClass(currentSavedAnswer.score_total)}`}>
                 {currentSavedAnswer.score_total.toFixed(1)}
               </div>
             </div>
             <div className="rounded-xl border border-white/10 bg-slate-950/60 p-3 text-center">
-              <div className="text-[11px] text-slate-400">PR (Phát âm)</div>
+              <div className="text-[11px] text-slate-400">Phát âm</div>
               <div className="text-xl font-bold text-emerald-400">
                 {currentSavedAnswer.score_accuracy.toFixed(1)}
               </div>
             </div>
             <div className="rounded-xl border border-white/10 bg-slate-950/60 p-3 text-center">
-              <div className="text-[11px] text-slate-400">FC (Mạch lạc)</div>
+              <div className="text-[11px] text-slate-400">Mạch lạc</div>
               <div className="text-xl font-bold text-sky-400">
                 {formatScoreValue(currentSavedAnswer.score_context)}
               </div>
             </div>
             <div className="rounded-xl border border-white/10 bg-slate-950/60 p-3 text-center">
-              <div className="text-[11px] text-slate-400">LR (Từ vựng)</div>
+              <div className="text-[11px] text-slate-400">Từ vựng</div>
               <div className="text-xl font-bold text-amber-400">
                 {formatScoreValue(currentSavedAnswer.score_lexical)}
               </div>
             </div>
             <div className="rounded-xl border border-white/10 bg-slate-950/60 p-3 text-center">
-              <div className="text-[11px] text-slate-400">GRA (Ngữ pháp)</div>
+              <div className="text-[11px] text-slate-400">Ngữ pháp</div>
               <div className="text-xl font-bold text-indigo-400">
                 {formatScoreValue(currentSavedAnswer.score_grammar)}
               </div>
@@ -1121,7 +1121,7 @@ export function PracticeSessionRunner({
 
           {otfTips.length > 0 && (
             <div className="rounded-xl border border-white/10 bg-slate-950/60 p-3 text-xs text-slate-300 space-y-1">
-              <div className="font-semibold text-amber-300">Lưu ý âm vị L2-MDD:</div>
+              <div className="font-semibold text-amber-300">Gợi ý cải thiện phát âm:</div>
               {otfTips.map((tip, idx) => (
                 <div key={idx}>• {tip}</div>
               ))}

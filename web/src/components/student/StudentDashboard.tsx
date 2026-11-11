@@ -30,7 +30,7 @@ import {
   fetchStudentAssessments,
   fetchStudentProfile,
 } from '@/lib/student';
-import { formatScoreValue, getExamTypeName, hasVoiceEnrolled } from '@/lib/utils';
+import { formatScoreValue, getExamTypeName, getLevelLabel, hasVoiceEnrolled } from '@/lib/utils';
 import { Modal } from '@/components/ui/Modal';
 import { useToast } from '@/components/ToastProvider';
 import { AssessmentCard, AssessmentDetailModal } from '@/components/AssessmentDetailModal';
@@ -264,7 +264,7 @@ export function StudentDashboard({
                 Xin chào, {currentUser.full_name}
               </h2>
               <p className="mt-1 text-sm text-slate-400">
-                Chọn bộ đề Speaking để luyện tập từng câu hoặc thi thử bấm giờ với Giám khảo AI.
+                Chọn bộ đề Speaking để luyện tập từng câu hoặc thi thử bấm giờ cùng AI.
               </p>
             </div>
             <button
@@ -323,7 +323,7 @@ export function StudentDashboard({
               </div>
               <div>
                 <div className="text-2xl font-extrabold text-sky-300">{stats.avgPR}</div>
-                <div className="text-xs text-slate-400">TB Phát âm (PR)</div>
+                <div className="text-xs text-slate-400">Điểm Phát âm TB</div>
               </div>
             </div>
 
@@ -333,7 +333,7 @@ export function StudentDashboard({
               </div>
               <div>
                 <div className="text-2xl font-extrabold text-amber-300">{stats.avgFC}</div>
-                <div className="text-xs text-slate-400">TB Mạch lạc (FC)</div>
+                <div className="text-xs text-slate-400">Điểm Mạch lạc TB</div>
               </div>
             </div>
           </div>
@@ -428,7 +428,7 @@ export function StudentDashboard({
               Kho Bộ đề Luyện Speaking
             </h2>
             <p className="mt-1 text-sm text-slate-400">
-              Chọn bộ đề đã Publish để luyện tập từng câu có phản hồi ngay hoặc thi thử bấm giờ như thi thật.
+              Chọn bộ đề để luyện tập từng câu có phản hồi ngay hoặc thi thử bấm giờ như thi thật.
             </p>
           </div>
 
@@ -470,7 +470,7 @@ export function StudentDashboard({
 
           {filteredSets.length === 0 ? (
             <div className="section-card py-12 text-center text-sm text-slate-400">
-              Hiện chưa có bộ đề Publish nào phù hợp với bộ lọc.
+              Hiện chưa có bộ đề nào phù hợp với bộ lọc.
             </div>
           ) : (
             <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
@@ -495,7 +495,7 @@ export function StudentDashboard({
                     )}
 
                     <div className="text-[11px] text-slate-400 pt-1">
-                      Trình độ: <strong className="text-slate-200">{qs.level}</strong> · GV:{' '}
+                      Trình độ: <strong className="text-slate-200">{getLevelLabel(qs.level)}</strong> · GV:{' '}
                       <strong className="text-slate-200">{qs.teacher_name || 'N/A'}</strong>
                     </div>
                   </div>
@@ -688,7 +688,7 @@ export function StudentDashboard({
             </div>
             <div className="text-sm font-bold text-white">Thi thử bấm giờ</div>
             <p className="text-xs leading-relaxed text-slate-300">
-              Mô phỏng phòng thi thật với đồng hồ Chuẩn bị / Nói liên tục và quy đổi Band IELTS/VSTEP/TOEIC.
+              Mô phỏng phòng thi thật với đồng hồ chuẩn bị / nói liên tục và quy đổi điểm IELTS / VSTEP / TOEIC.
             </p>
           </button>
         </div>

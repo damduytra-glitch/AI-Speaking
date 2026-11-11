@@ -10,9 +10,9 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: 'SpeakAI – Hệ thống Đánh giá Phát âm & Giao tiếp AI',
+  title: 'SpeakAI – Hệ thống Luyện nói & Đánh giá Tiếng Anh với AI',
   description:
-    'Nền tảng luyện nói và đánh giá phát âm tiếng Anh bằng AI (SpeechOcean, L2-MDD, ERes2Net Speaker Diarization, IELTS 4-Pillar AI Evaluator).',
+    'Nền tảng luyện nói tiếng Anh trực tuyến với AI: chấm phát âm, góp ý ngữ pháp, đánh giá hội thoại 1-1 và phân tích giờ dạy.',
 };
 
 export default function RootLayout({

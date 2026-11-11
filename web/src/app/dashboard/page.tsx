@@ -29,7 +29,7 @@ export default function DashboardPage() {
 
   const loadBootstrap = useCallback(async () => {
     if (!isSupabaseConfigured || !supabase) {
-      setBootstrapError('Hệ thống chưa được cấu hình biến môi trường Supabase.');
+      setBootstrapError('Hệ thống đang bảo trì kết nối dữ liệu. Vui lòng thử lại sau.');
       setBootstrapping(false);
       return;
     }

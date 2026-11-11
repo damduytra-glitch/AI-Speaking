@@ -81,9 +81,7 @@ export function computeMeanNormalizedEmbedding(vectors: number[][]): number[] {
 export async function fetchEmbeddingFromBackend(audioBlob: Blob, gpuUrl: string): Promise<number[]> {
   const backendUrl = gpuUrl.trim().replace(/\/+$/, '');
   if (!backendUrl) {
-    throw new Error(
-      'Chưa cấu hình API Backend! Vui lòng khởi chạy server Kaggle / Cloudflare Tunnel và cập nhật GPU URL.',
-    );
+    throw new Error('Hệ thống nhận diện giọng nói hiện chưa sẵn sàng. Vui lòng thử lại sau.');
   }
 
   const formData = new FormData();
@@ -99,13 +97,13 @@ export async function fetchEmbeddingFromBackend(audioBlob: Blob, gpuUrl: string)
   if (!response.ok) {
     const errData = (await response.json().catch(() => ({}))) as { detail?: string; error?: string };
     throw new Error(
-      errData.detail || errData.error || `Lỗi API Backend (${response.status}): Không thể trích xuất embedding`,
+      errData.detail || errData.error || 'Không thể xử lý mẫu giọng nói. Vui lòng thử lại.',
     );
   }
 
   const data = (await response.json()) as { success?: boolean; embedding?: number[]; error?: string };
   if (!data.success || !Array.isArray(data.embedding)) {
-    throw new Error(data.error || 'Lỗi trích xuất embedding từ mô hình');
+    throw new Error(data.error || 'Không thể ghi nhận mẫu giọng từ bản ghi âm. Vui lòng thử lại.');
   }
 
   return data.embedding;

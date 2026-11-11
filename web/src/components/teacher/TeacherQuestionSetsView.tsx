@@ -35,7 +35,7 @@ import {
   updateQuestion,
   updateQuestionSet,
 } from '@/lib/questionSets';
-import { formatScoreValue, getExamTypeName } from '@/lib/utils';
+import { formatScoreValue, getExamTypeName, getLevelLabel } from '@/lib/utils';
 import { Modal } from '@/components/ui/Modal';
 import { useToast } from '@/components/ToastProvider';
 import { TaskQuestionCard, TaskTypeBadge } from '@/components/TaskQuestionCard';
@@ -171,7 +171,7 @@ export function TeacherQuestionSetsView({ currentUser, onChanged }: TeacherQuest
   const handleCloneSet = async (qs: QuestionSet) => {
     try {
       const newId = await cloneQuestionSet(qs.id);
-      showToast(`Đã nhân bản bộ đề "${qs.title}" về kho cá nhân!`, 'success');
+      showToast(`Đã tạo bản sao bộ đề "${qs.title}" về kho của bạn!`, 'success');
       await loadSets();
       onChanged?.();
       const updated = await fetchQuestionSets(null);
@@ -179,7 +179,7 @@ export function TeacherQuestionSetsView({ currentUser, onChanged }: TeacherQuest
       const cloned = updated.find((item) => item.id === newId);
       if (cloned) await handleOpenEditor(cloned);
     } catch (err) {
-      showToast(err instanceof Error ? err.message : 'Lỗi nhân bản bộ đề', 'danger');
+      showToast(err instanceof Error ? err.message : 'Lỗi tạo bản sao bộ đề', 'danger');
     }
   };
 
@@ -193,12 +193,12 @@ export function TeacherQuestionSetsView({ currentUser, onChanged }: TeacherQuest
         setEditingSet({ ...editingSet, is_published: !qs.is_published });
       }
       showToast(
-        !qs.is_published ? 'Đã Publish bộ đề cho học viên!' : 'Đã chuyển bộ đề về bản nháp.',
+        !qs.is_published ? 'Đã mở bộ đề cho học viên!' : 'Đã chuyển bộ đề về bản nháp.',
         'success',
       );
       onChanged?.();
     } catch (err) {
-      showToast(err instanceof Error ? err.message : 'Lỗi đổi trạng thái Publish', 'danger');
+      showToast(err instanceof Error ? err.message : 'Lỗi đổi trạng thái bộ đề', 'danger');
     }
   };
 
@@ -421,7 +421,7 @@ export function TeacherQuestionSetsView({ currentUser, onChanged }: TeacherQuest
                   : 'border border-slate-500/35 bg-slate-500/15 text-slate-300'
               }`}
             >
-              {isOwner ? 'Quyền: Chủ sở hữu (Owner)' : 'Quyền: Chỉ xem (Read-only)'}
+              {isOwner ? 'Bộ đề của tôi' : 'Bộ đề tham khảo (Chỉ xem)'}
             </span>
 
             {isOwner ? (
@@ -435,7 +435,7 @@ export function TeacherQuestionSetsView({ currentUser, onChanged }: TeacherQuest
                 }`}
               >
                 {editingSet.is_published ? <Eye className="h-3.5 w-3.5" /> : <Unlock className="h-3.5 w-3.5" />}
-                {editingSet.is_published ? 'Đang Publish (Click để ẩn)' : 'Publish cho Học viên'}
+                {editingSet.is_published ? 'Đang mở (Nhấn để ẩn)' : 'Mở bộ đề cho Học viên'}
               </button>
             ) : (
               <button
@@ -444,7 +444,7 @@ export function TeacherQuestionSetsView({ currentUser, onChanged }: TeacherQuest
                 className="inline-flex items-center gap-1.5 rounded-xl bg-indigo-600 px-3.5 py-2 text-xs font-semibold text-white hover:bg-indigo-500"
               >
                 <Copy className="h-3.5 w-3.5" />
-                Nhân bản về kho của tôi
+                Tạo bản sao về kho của tôi
               </button>
             )}
           </div>
@@ -488,9 +488,9 @@ export function TeacherQuestionSetsView({ currentUser, onChanged }: TeacherQuest
                 onChange={(e) => setEditorLevel(e.target.value as QuestionLevel)}
                 className="w-full rounded-xl border border-white/15 bg-slate-950/75 px-3 py-2 text-sm text-white disabled:opacity-65"
               >
-                <option value="beginner">Cơ bản (Beginner)</option>
-                <option value="intermediate">Trung cấp (Intermediate)</option>
-                <option value="advanced">Nâng cao (Advanced)</option>
+                <option value="beginner">Cơ bản</option>
+                <option value="intermediate">Trung cấp</option>
+                <option value="advanced">Nâng cao</option>
               </select>
             </div>
           </div>
@@ -610,7 +610,7 @@ export function TeacherQuestionSetsView({ currentUser, onChanged }: TeacherQuest
             <div className="grid gap-3 sm:grid-cols-2">
               <div>
                 <label className="mb-1 block text-xs font-semibold text-slate-300">
-                  Dạng bài (Task Type)
+                  Dạng bài
                 </label>
                 <select
                   value={qTaskType}
@@ -619,7 +619,7 @@ export function TeacherQuestionSetsView({ currentUser, onChanged }: TeacherQuest
                 >
                   {availableTypes.map((t) => (
                     <option key={t.id} value={t.id}>
-                      {t.label} · {t.title}
+                      {t.title}
                     </option>
                   ))}
                 </select>
@@ -632,7 +632,7 @@ export function TeacherQuestionSetsView({ currentUser, onChanged }: TeacherQuest
                   type="text"
                   value={qPartTitle}
                   onChange={(e) => setQPartTitle(e.target.value)}
-                  placeholder="Part 1: Social Interaction"
+                  placeholder="VD: Phần 1 / Part 1"
                   className="w-full rounded-xl border border-white/15 bg-slate-950/75 px-3 py-2 text-sm text-white"
                 />
               </div>
@@ -678,7 +678,7 @@ export function TeacherQuestionSetsView({ currentUser, onChanged }: TeacherQuest
             <div>
               <label className="mb-1 block text-xs font-semibold text-slate-300">
                 {qTaskType === 'read_aloud'
-                  ? 'Đoạn văn cần đọc to (Reading Passage) *'
+                  ? 'Đoạn văn cần đọc to *'
                   : 'Nội dung câu hỏi / Đề bài *'}
               </label>
               <textarea
@@ -695,10 +695,10 @@ export function TeacherQuestionSetsView({ currentUser, onChanged }: TeacherQuest
               <div>
                 <label className="mb-1 block text-xs font-semibold text-slate-300">
                   {qTaskType === 'long_turn'
-                    ? 'Các ý gợi ý Cue Card (mỗi ý 1 dòng)'
+                    ? 'Các ý gợi ý cần nói (mỗi ý 1 dòng)'
                     : qTaskType === 'problem_solution'
                       ? 'Các giải pháp / lựa chọn (mỗi ý 1 dòng)'
-                      : 'Tài liệu tham khảo cho sẵn (Schedule / Info)'}
+                      : 'Thông tin / Lịch trình cho sẵn'}
                 </label>
                 <textarea
                   rows={4}
@@ -713,12 +713,12 @@ export function TeacherQuestionSetsView({ currentUser, onChanged }: TeacherQuest
             {qTaskType === 'picture_description' && (
               <div className="space-y-2 rounded-xl border border-white/10 bg-slate-950/60 p-3.5">
                 <label className="block text-xs font-semibold text-slate-300">
-                  Hình ảnh đề thi (Picture Description)
+                  Hình ảnh minh họa đề thi
                 </label>
                 <div className="flex flex-wrap items-center gap-3">
                   <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-xl border border-indigo-500/35 bg-indigo-500/15 px-3 py-2 text-xs font-semibold text-indigo-300 hover:bg-indigo-500/25">
                     <ImagePlus className="h-4 w-4" />
-                    Chọn ảnh (Tự nén tối ưu)
+                    Chọn ảnh tải lên
                     <input
                       type="file"
                       accept="image/*"
@@ -739,7 +739,7 @@ export function TeacherQuestionSetsView({ currentUser, onChanged }: TeacherQuest
                 {qImageUrl && (
                   <img
                     src={qImageUrl}
-                    alt="Preview"
+                    alt="Ảnh xem trước"
                     className="mt-2 max-h-48 rounded-lg border border-white/10 object-contain"
                   />
                 )}
@@ -779,7 +779,7 @@ export function TeacherQuestionSetsView({ currentUser, onChanged }: TeacherQuest
             Quản lý Bộ đề Speaking
           </h2>
           <p className="mt-1 text-sm text-slate-400">
-            Tạo bộ đề mới, biên soạn câu hỏi theo chuẩn thi và nhân bản các bộ đề tham khảo về kho của bạn.
+            Tạo bộ đề mới, biên soạn câu hỏi theo chuẩn thi và tạo bản sao các bộ đề tham khảo về kho của bạn.
           </p>
         </div>
 
@@ -812,7 +812,7 @@ export function TeacherQuestionSetsView({ currentUser, onChanged }: TeacherQuest
           className="rounded-xl border border-white/15 bg-slate-950/75 px-3 py-2 text-sm text-white"
         >
           <option value="all">Tất cả bộ đề</option>
-          <option value="mine">Của tôi (Owner)</option>
+          <option value="mine">Bộ đề của tôi</option>
           <option value="others">Tham khảo (Chỉ xem)</option>
         </select>
 
@@ -833,7 +833,7 @@ export function TeacherQuestionSetsView({ currentUser, onChanged }: TeacherQuest
           className="rounded-xl border border-white/15 bg-slate-950/75 px-3 py-2 text-sm text-white"
         >
           <option value="">Tất cả trạng thái</option>
-          <option value="published">Đang Publish</option>
+          <option value="published">Đang mở</option>
           <option value="draft">Bản nháp</option>
         </select>
       </div>
@@ -864,12 +864,12 @@ export function TeacherQuestionSetsView({ currentUser, onChanged }: TeacherQuest
                           : 'border border-slate-500/35 bg-slate-500/15 text-slate-300'
                       }`}
                     >
-                      {isOwner ? 'Chủ sở hữu (Owner)' : 'Chỉ xem (Read-only)'}
+                      {isOwner ? 'Của tôi' : 'Tham khảo (Chỉ xem)'}
                     </span>
 
                     {qs.is_published ? (
                       <span className="inline-flex items-center gap-1 rounded-full border border-emerald-500/35 bg-emerald-500/15 px-2.5 py-0.5 text-[11px] font-semibold text-emerald-300">
-                        <Eye className="h-3 w-3" /> Published
+                        <Eye className="h-3 w-3" /> Đang mở
                       </span>
                     ) : (
                       <span className="inline-flex items-center gap-1 rounded-full border border-white/15 bg-white/5 px-2.5 py-0.5 text-[11px] font-semibold text-slate-400">
@@ -885,7 +885,7 @@ export function TeacherQuestionSetsView({ currentUser, onChanged }: TeacherQuest
 
                   <div className="flex flex-wrap items-center gap-2 text-[11px] text-slate-300 pt-1">
                     <span className="rounded bg-white/5 px-2 py-0.5">{getExamTypeName(qs.exam_type)}</span>
-                    <span className="rounded bg-white/5 px-2 py-0.5">{qs.level}</span>
+                    <span className="rounded bg-white/5 px-2 py-0.5">{getLevelLabel(qs.level)}</span>
                     <span className="rounded bg-sky-500/15 px-2 py-0.5 text-sky-300 font-semibold">
                       {qs.question_count || 0} câu
                     </span>
@@ -910,10 +910,10 @@ export function TeacherQuestionSetsView({ currentUser, onChanged }: TeacherQuest
                       type="button"
                       onClick={() => handleCloneSet(qs)}
                       className="inline-flex items-center gap-1 rounded-xl border border-sky-500/35 bg-sky-500/15 px-3 py-2 text-xs font-semibold text-sky-300 hover:bg-sky-500/25"
-                      title="Nhân bản bộ đề về kho của tôi"
+                      title="Tạo bản sao bộ đề về kho của tôi"
                     >
                       <Copy className="h-3.5 w-3.5" />
-                      Clone
+                      Tạo bản sao
                     </button>
                   )}
 
@@ -933,7 +933,7 @@ export function TeacherQuestionSetsView({ currentUser, onChanged }: TeacherQuest
                         type="button"
                         onClick={() => handleTogglePublish(qs)}
                         className="rounded-xl border border-white/15 bg-white/5 p-2 text-slate-200 hover:bg-white/10"
-                        title={qs.is_published ? 'Ẩn bộ đề' : 'Publish bộ đề'}
+                        title={qs.is_published ? 'Ẩn bộ đề' : 'Mở bộ đề cho học viên'}
                       >
                         {qs.is_published ? <Lock className="h-3.5 w-3.5" /> : <Unlock className="h-3.5 w-3.5" />}
                       </button>
@@ -1029,7 +1029,7 @@ export function TeacherQuestionSetsView({ currentUser, onChanged }: TeacherQuest
               className="inline-flex items-center gap-1.5 rounded-xl bg-indigo-600 px-4 py-2 text-xs font-semibold text-white hover:bg-indigo-500 disabled:opacity-50"
             >
               {creating && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-              Tạo &amp; Mở trình biên soạn
+              Tạo &amp; Soạn câu hỏi
             </button>
           </div>
         </form>

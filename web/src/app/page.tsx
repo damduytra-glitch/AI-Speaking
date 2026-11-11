@@ -128,7 +128,7 @@ export default function AuthLandingPage() {
     e.preventDefault();
     setLoginError(null);
     if (!isSupabaseConfigured) {
-      setLoginError('Hệ thống chưa cấu hình biến môi trường Supabase.');
+      setLoginError('Hệ thống đang bảo trì kết nối. Vui lòng thử lại sau.');
       return;
     }
     setLoginLoading(true);
@@ -149,7 +149,7 @@ export default function AuthLandingPage() {
     setRegError(null);
     setPendingNotice(null);
     if (!isSupabaseConfigured) {
-      setRegError('Hệ thống chưa cấu hình biến môi trường Supabase.');
+      setRegError('Hệ thống đang bảo trì kết nối. Vui lòng thử lại sau.');
       return;
     }
 
@@ -188,7 +188,7 @@ export default function AuthLandingPage() {
         setPendingNotice({
           kind: 'teacher_pending',
           message:
-            'Đăng ký tài khoản Giáo viên thành công! Tài khoản của bạn đang ở trạng thái chờ Quản trị viên (Admin) phê duyệt.',
+            'Đăng ký tài khoản Giáo viên thành công! Tài khoản của bạn đang chờ Quản trị viên phê duyệt.',
         });
         showToast('Tài khoản Giáo viên đã gửi yêu cầu chờ duyệt.', 'info');
         return;
@@ -249,7 +249,7 @@ export default function AuthLandingPage() {
         <div className="lg:col-span-5 space-y-6 text-center lg:text-left">
           <div className="inline-flex items-center gap-2 rounded-full border border-indigo-500/35 bg-indigo-500/15 px-3.5 py-1.5 text-xs font-semibold text-indigo-300">
             <Sparkles className="h-3.5 w-3.5" />
-            Nền tảng Khảo thí Speaking AI 4 Trụ Cột
+            Nền tảng Luyện nói Tiếng Anh với AI
           </div>
 
           <div className="flex items-center justify-center lg:justify-start gap-3">
@@ -262,26 +262,26 @@ export default function AuthLandingPage() {
           </div>
 
           <p className="text-sm leading-relaxed text-slate-300">
-            Hệ thống hỗ trợ luyện tập Speaking chuẩn TOEIC / VSTEP / IELTS, chấm hội thoại 1-1 tự động tách giọng Giáo viên – Học viên và phân tích tỷ lệ Tiếng Anh / Tiếng Việt trong lớp học.
+            Hệ thống hỗ trợ luyện tập Speaking chuẩn TOEIC / VSTEP / IELTS, chấm hội thoại 1-1 tự động nhận diện Giáo viên – Học viên và phân tích tỷ lệ Tiếng Anh / Tiếng Việt trong tiết dạy.
           </p>
 
           <div className="grid grid-cols-1 gap-2.5 text-left text-xs sm:grid-cols-3 lg:grid-cols-1">
             <div className="rounded-xl border border-white/10 bg-slate-900/50 p-3 backdrop-blur">
               <div className="font-semibold text-indigo-300">1. Học viên luyện tập &amp; thi thử</div>
               <div className="mt-0.5 text-slate-400">
-                Ghi âm trực tiếp, chấm phát âm âm học + phản hồi IELTS 4 trụ cột.
+                Ghi âm trực tiếp, chấm phát âm và gợi ý sửa ngữ pháp, từ vựng.
               </div>
             </div>
             <div className="rounded-xl border border-white/10 bg-slate-900/50 p-3 backdrop-blur">
               <div className="font-semibold text-sky-300">2. Giáo viên chấm 1-1 &amp; duyệt bài</div>
               <div className="mt-0.5 text-slate-400">
-                Tách giọng hội thoại, theo dõi lớp học và phân tích tiết dạy EN/VI.
+                Chấm điểm hội thoại, theo dõi lớp học và phân tích tiết dạy EN/VI.
               </div>
             </div>
             <div className="rounded-xl border border-white/10 bg-slate-900/50 p-3 backdrop-blur">
-              <div className="font-semibold text-emerald-300">3. Admin điều phối tập trung</div>
+              <div className="font-semibold text-emerald-300">3. Quản lý hệ thống</div>
               <div className="mt-0.5 text-slate-400">
-                Phê duyệt Giáo viên, phân lớp học viên và giám sát kết nối GPU AI.
+                Phê duyệt Giáo viên, phân lớp học viên và theo dõi hoạt động chung.
               </div>
             </div>
           </div>
@@ -294,13 +294,9 @@ export default function AuthLandingPage() {
               <div className="mb-5 flex items-start gap-3 rounded-xl border border-amber-500/40 bg-amber-500/10 p-3.5 text-xs text-amber-200">
                 <ShieldAlert className="mt-0.5 h-5 w-5 shrink-0 text-amber-400" />
                 <div>
-                  <div className="font-bold text-amber-300">Chưa cấu hình Supabase</div>
+                  <div className="font-bold text-amber-300">Hệ thống đang bảo trì kết nối</div>
                   <p className="mt-1 leading-relaxed">
-                    Vui lòng thêm <code className="font-mono text-white">NEXT_PUBLIC_SUPABASE_URL</code> và{' '}
-                    <code className="font-mono text-white">NEXT_PUBLIC_SUPABASE_ANON_KEY</code> (hoặc{' '}
-                    <code className="font-mono text-white">SUPABASE_URL</code> /{' '}
-                    <code className="font-mono text-white">SUPABASE_ANON_KEY</code>) vào file{' '}
-                    <code className="font-mono text-white">.env</code> hoặc Vercel Environment Variables.
+                    Kết nối dữ liệu hiện đang tạm gián đoạn. Vui lòng quay lại sau ít phút.
                   </p>
                 </div>
               </div>
@@ -467,7 +463,7 @@ export default function AuthLandingPage() {
                       <Presentation className="h-5 w-5 shrink-0 text-indigo-400" />
                       <div>
                         <div className="text-sm font-bold">Giáo viên</div>
-                        <div className="text-[11px] text-slate-400">Cần Admin phê duyệt</div>
+                        <div className="text-[11px] text-slate-400">Cần duyệt trước khi dạy</div>
                       </div>
                     </button>
                   </div>
@@ -568,7 +564,7 @@ export default function AuthLandingPage() {
                   </div>
                 ) : (
                   <div className="rounded-xl border border-indigo-500/30 bg-indigo-500/10 p-3 text-xs text-indigo-200">
-                    Tài khoản Giáo viên sau khi đăng ký sẽ ở trạng thái <strong>Chờ duyệt</strong>. Quản trị viên (Admin) sẽ kích hoạt tài khoản cho bạn.
+                    Tài khoản Giáo viên sau khi đăng ký sẽ ở trạng thái <strong>Chờ duyệt</strong>. Quản trị viên sẽ kích hoạt tài khoản cho bạn.
                   </div>
                 )}
 

@@ -52,9 +52,7 @@ export function TaskTypeBadge({ taskType }: { taskType?: TaskType | string }) {
   return (
     <span className={`badge-task-type ${info.badgeClass}`}>
       {getTaskIcon(info.id)}
-      <span>
-        {info.label} · {info.title}
-      </span>
+      <span>{info.title}</span>
     </span>
   );
 }
@@ -71,7 +69,7 @@ export function TaskQuestionCard({ question }: { question: Partial<Question> }) 
         <div className="read-aloud-box">
           <div className="mb-2 flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-violet-300">
             <Volume2 className="h-4 w-4" />
-            Văn bản cần đọc to (Reading Passage)
+            Đoạn văn cần đọc to
           </div>
           <p className="text-lg font-medium leading-relaxed text-slate-50">{qText}</p>
         </div>
@@ -111,7 +109,7 @@ export function TaskQuestionCard({ question }: { question: Partial<Question> }) 
           <div className="info-doc-box">
             <div className="mb-2 flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-cyan-300">
               <FileSpreadsheet className="h-4 w-4" />
-              Tài liệu dữ liệu cho sẵn (Reference Document)
+              Thông tin tham khảo cho sẵn
             </div>
             <pre className="whitespace-pre-wrap rounded-lg border border-white/10 bg-slate-950/70 p-3.5 font-mono text-sm leading-relaxed text-slate-200">
               {refText}
@@ -120,7 +118,7 @@ export function TaskQuestionCard({ question }: { question: Partial<Question> }) 
         )}
         <div>
           <div className="mb-1 text-xs font-bold uppercase tracking-wider text-amber-300">
-            Câu hỏi truy vấn thông tin:
+            Câu hỏi:
           </div>
           <div className="text-xl font-semibold leading-relaxed text-white">{qText}</div>
         </div>
@@ -134,12 +132,12 @@ export function TaskQuestionCard({ question }: { question: Partial<Question> }) 
       <div className="cue-card-box text-left">
         <div className="mb-3 inline-flex items-center gap-1.5 rounded-md bg-amber-500/20 px-3 py-1 text-xs font-bold uppercase tracking-wider text-amber-300">
           <ListChecks className="h-3.5 w-3.5" />
-          Cue Card Topic · 1–2 phút trình bày
+          Chủ đề trình bày · 1–2 phút
         </div>
         <div className="mb-3 text-xl font-bold leading-relaxed text-white">{qText}</div>
         {bulletItems.length > 0 && (
           <>
-            <div className="mb-2 text-sm font-semibold italic text-amber-200">You should say:</div>
+            <div className="mb-2 text-sm font-semibold italic text-amber-200">Gợi ý các ý cần nói:</div>
             <ul className="space-y-1.5 text-sm text-slate-200">
               {bulletItems.map((item, idx) => (
                 <li key={idx} className="flex items-start gap-2">
@@ -163,7 +161,7 @@ export function TaskQuestionCard({ question }: { question: Partial<Question> }) 
       <div className="problem-solution-box text-left space-y-3">
         <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-amber-300">
           <AlertTriangle className="h-4 w-4" />
-          Tình huống (Situation / Problem)
+          Tình huống
         </div>
         <div className="text-lg font-medium leading-relaxed text-white">{qText}</div>
         {options.length > 0 && (
@@ -196,7 +194,7 @@ export function TaskQuestionCard({ question }: { question: Partial<Question> }) 
         <div className="mx-auto max-w-2xl overflow-hidden rounded-xl border border-white/10 bg-slate-950/60 p-3">
           <img
             src={imgUrl}
-            alt="Question illustration"
+            alt="Hình ảnh minh họa câu hỏi"
             className="mx-auto max-h-[340px] w-auto rounded-lg object-contain shadow-xl"
           />
         </div>
