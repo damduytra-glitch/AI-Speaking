@@ -18,8 +18,9 @@ import {
   Volume2,
 } from 'lucide-react';
 import { Modal } from './ui/Modal';
+import { ScoreRingGauge, SkillRadarChart } from './ui/AnalyticsCharts';
 import { fetchSessionDetail, submitTeacherReview } from '@/lib/practice';
-import { formatScoreValue, scoreTextColorClass } from '@/lib/utils';
+import { formatScoreValue, getExamTypeName, getIeltsBandLabel, scoreTextColorClass } from '@/lib/utils';
 import { useToast } from './ToastProvider';
 import type { PracticeSession } from '@/lib/types';
 
@@ -104,7 +105,7 @@ export function PracticeDetailModal({
       maxWidthClass="max-w-5xl"
       title={
         <span className="flex items-center gap-2">
-          <Award className="h-5 w-5 text-amber-400" />
+          <Award className="h-5 w-5 text-amber-500" />
           {detail?.question_set?.title
             ? `Chi tiết: ${detail.question_set.title}`
             : 'Chi tiết bài Luyện tập & Thi thử'}
@@ -117,83 +118,134 @@ export function PracticeDetailModal({
       }
     >
       {loading && (
-        <div className="flex flex-col items-center justify-center py-14 text-slate-400">
-          <Loader2 className="mb-3 h-7 w-7 animate-spin text-indigo-400" />
+        <div className="flex flex-col items-center justify-center py-14 text-slate-500">
+          <Loader2 className="mb-3 h-7 w-7 animate-spin text-indigo-600" />
           <p className="text-sm">Đang tải chi tiết bài làm...</p>
         </div>
       )}
 
       {!loading && error && (
-        <div className="rounded-xl border border-rose-500/35 bg-rose-500/10 p-4 text-sm text-rose-200">
+        <div className="rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700">
           {error}
         </div>
       )}
 
-      {!loading && !error && detail && (
+      {!loading && !error && detail && (() => {
+        const totalNum = Number(detail.score_total || 0);
+        const rawBand = (detail.exam_band || '').trim();
+        const isNumericBandDuplicate =
+          rawBand !== '' && /^\d+(\.\d+)?\s*\/\s*10$/i.test(rawBand);
+        const bandChip =
+          rawBand && !isNumericBandDuplicate
+            ? rawBand
+            : getIeltsBandLabel(totalNum).band;
+
+        return (
         <div className="space-y-5">
-          {isExam && (
-            <div className="rounded-2xl border border-violet-500/35 bg-gradient-to-br from-violet-500/15 to-amber-500/10 p-5 text-center">
-              <div className="mb-2 text-xs font-bold uppercase tracking-wider text-amber-300">
-                Kết quả thi thử
+          <div className="section-card">
+            <div className="mb-4 flex flex-wrap items-start justify-between gap-2">
+              <div>
+                <h4 className="flex items-center gap-2 text-sm font-bold text-slate-900">
+                  <Sparkles className="h-4 w-4 text-indigo-600" />
+                  Tổng quan Kết quả {isExam ? 'Thi thử' : 'Luyện tập'}
+                </h4>
+                <p className="mt-0.5 text-xs text-slate-500">
+                  {getExamTypeName(detail.question_set?.exam_type)} · {detail.answers?.length || 0} câu đã chấm
+                </p>
               </div>
-              <div className="inline-block rounded-xl border-2 border-amber-400/50 bg-slate-950/60 px-5 py-1.5 text-2xl font-extrabold text-white">
-                {detail.exam_band || 'Thi thử'}
+              <div className="flex flex-wrap items-center gap-2">
+                {isExam && (
+                  <span className="rounded-full border border-violet-200 bg-violet-50 px-3 py-0.5 text-xs font-semibold text-violet-700">
+                    {bandChip}
+                  </span>
+                )}
+                <span
+                  className={`rounded-full border px-3 py-0.5 text-xs font-semibold ${getIeltsBandLabel(totalNum).badgeClass}`}
+                >
+                  {getIeltsBandLabel(totalNum).level}
+                </span>
               </div>
             </div>
-          )}
 
-          <div className="rounded-2xl border border-indigo-500/25 bg-gradient-to-br from-indigo-500/15 to-sky-500/10 p-6 text-center">
-            <div className="bg-gradient-to-r from-indigo-400 to-sky-400 bg-clip-text text-5xl font-extrabold text-transparent">
-              {Number(detail.score_total || 0).toFixed(1)}
-            </div>
-            <div className="mt-1 text-xs font-medium text-slate-400">
-              Điểm tổng kết / 10
-            </div>
+            <div className="grid items-center gap-6 md:grid-cols-12">
+              <div className="md:col-span-4 flex flex-col items-center justify-center rounded-2xl border border-slate-100 bg-slate-50/75 p-5">
+                <ScoreRingGauge
+                  score={Number(detail.score_total || 0)}
+                  size={146}
+                  strokeWidth={13}
+                  label="Tổng điểm / 10"
+                />
+              </div>
 
-            <div className="mx-auto mt-4 grid max-w-2xl grid-cols-2 gap-3 md:grid-cols-4">
-              <div className="rounded-xl border border-white/10 bg-slate-950/60 p-3">
-                <div className="text-xl font-bold text-emerald-400">
-                  {Number(detail.score_accuracy ?? detail.score_total ?? 0).toFixed(1)}
-                </div>
-                <div className="text-[11px] text-slate-400">Phát âm</div>
+              <div className="md:col-span-4 flex justify-center">
+                <SkillRadarChart
+                  size={215}
+                  skills={[
+                    {
+                      label: 'Phát âm',
+                      value: Number(detail.score_accuracy ?? detail.score_total ?? 0),
+                    },
+                    {
+                      label: 'Mạch lạc',
+                      value: detail.score_context != null ? Number(detail.score_context) : null,
+                    },
+                    {
+                      label: 'Từ vựng',
+                      value: detail.score_lexical != null ? Number(detail.score_lexical) : null,
+                    },
+                    {
+                      label: 'Ngữ pháp',
+                      value: detail.score_grammar != null ? Number(detail.score_grammar) : null,
+                    },
+                  ]}
+                />
               </div>
-              <div className="rounded-xl border border-white/10 bg-slate-950/60 p-3">
-                <div className="text-xl font-bold text-sky-400">
-                  {formatScoreValue(detail.score_context)}
+
+              <div className="md:col-span-4 space-y-2">
+                <div className="flex items-center justify-between rounded-xl border border-slate-100 bg-slate-50/85 px-3.5 py-2.5 text-xs">
+                  <span className="font-semibold text-slate-600">Phát âm</span>
+                  <span className="font-extrabold text-emerald-600 tabular-nums">
+                    {Number(detail.score_accuracy ?? detail.score_total ?? 0).toFixed(1)}
+                  </span>
                 </div>
-                <div className="text-[11px] text-slate-400">Mạch lạc</div>
-              </div>
-              <div className="rounded-xl border border-white/10 bg-slate-950/60 p-3">
-                <div className="text-xl font-bold text-amber-400">
-                  {formatScoreValue(detail.score_lexical)}
+                <div className="flex items-center justify-between rounded-xl border border-slate-100 bg-slate-50/85 px-3.5 py-2.5 text-xs">
+                  <span className="font-semibold text-slate-600">Mạch lạc</span>
+                  <span className="font-extrabold text-sky-600 tabular-nums">
+                    {formatScoreValue(detail.score_context)}
+                  </span>
                 </div>
-                <div className="text-[11px] text-slate-400">Từ vựng</div>
-              </div>
-              <div className="rounded-xl border border-white/10 bg-slate-950/60 p-3">
-                <div className="text-xl font-bold text-indigo-400">
-                  {formatScoreValue(detail.score_grammar)}
+                <div className="flex items-center justify-between rounded-xl border border-slate-100 bg-slate-50/85 px-3.5 py-2.5 text-xs">
+                  <span className="font-semibold text-slate-600">Từ vựng</span>
+                  <span className="font-extrabold text-amber-600 tabular-nums">
+                    {formatScoreValue(detail.score_lexical)}
+                  </span>
                 </div>
-                <div className="text-[11px] text-slate-400">Ngữ pháp</div>
+                <div className="flex items-center justify-between rounded-xl border border-slate-100 bg-slate-50/85 px-3.5 py-2.5 text-xs">
+                  <span className="font-semibold text-slate-600">Ngữ pháp</span>
+                  <span className="font-extrabold text-indigo-600 tabular-nums">
+                    {formatScoreValue(detail.score_grammar)}
+                  </span>
+                </div>
               </div>
             </div>
           </div>
 
           {hasTeacherReview && (
-            <div className="rounded-2xl border border-sky-500/40 bg-sky-500/10 p-4">
+            <div className="rounded-2xl border border-sky-200 bg-sky-50/80 p-4">
               <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-                <span className="flex items-center gap-2 text-sm font-bold text-sky-300">
-                  <MessageSquareHeart className="h-4 w-4" />
+                <span className="flex items-center gap-2 text-sm font-bold text-sky-800">
+                  <MessageSquareHeart className="h-4 w-4 text-sky-600" />
                   Nhận xét &amp; Đánh giá của Giáo viên
                 </span>
-                <span className="rounded-full border border-sky-500/35 bg-sky-500/15 px-2.5 py-0.5 text-xs font-semibold text-sky-200">
+                <span className="rounded-full border border-sky-200 bg-white px-2.5 py-0.5 text-xs font-semibold text-sky-700">
                   {detail.reviewed_at
                     ? `Đã duyệt ${new Date(detail.reviewed_at).toLocaleDateString('vi-VN')}`
                     : 'Giáo viên đã duyệt'}
                 </span>
               </div>
-              <p className="text-sm text-slate-100">
+              <p className="text-sm text-slate-800">
                 {detail.teacher_comment || (
-                  <span className="italic text-slate-400">
+                  <span className="italic text-slate-500">
                     Giáo viên đã xác nhận hoàn thành bài làm.
                   </span>
                 )}
@@ -203,7 +255,7 @@ export function PracticeDetailModal({
 
           {canReview && ['completed', 'reviewed'].includes(detail.status) && (
             <div className="section-card space-y-3">
-              <h4 className="flex items-center gap-2 text-sm font-bold text-indigo-300">
+              <h4 className="flex items-center gap-2 text-sm font-bold text-indigo-700">
                 <PencilLine className="h-4 w-4" />
                 Duyệt bài &amp; Ghi nhận xét cho Học viên
               </h4>
@@ -212,14 +264,14 @@ export function PracticeDetailModal({
                 value={comment}
                 onChange={(e) => setComment(e.target.value)}
                 placeholder="Nhập nhận xét chi tiết về phát âm, ngữ pháp hoặc hướng cải thiện cho học viên..."
-                className="w-full rounded-xl border border-white/15 bg-slate-950/70 px-3.5 py-2.5 text-sm text-slate-100 placeholder-slate-500 focus:border-indigo-500 focus:outline-none"
+                className="w-full rounded-xl border border-slate-200 bg-slate-50/80 px-3.5 py-2.5 text-sm text-slate-900 placeholder-slate-400 focus:border-indigo-500 focus:bg-white focus:outline-none"
               />
               <div className="flex justify-end">
                 <button
                   type="button"
                   disabled={submitting}
                   onClick={handleSubmitReview}
-                  className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2 text-xs font-semibold text-white hover:bg-indigo-500 disabled:opacity-50 transition"
+                  className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2 text-xs font-semibold text-white shadow-md shadow-indigo-600/20 hover:bg-indigo-500 disabled:opacity-50 transition"
                 >
                   {submitting ? (
                     <>
@@ -240,8 +292,8 @@ export function PracticeDetailModal({
           )}
 
           <div className="space-y-3">
-            <h4 className="flex items-center gap-2 text-sm font-semibold text-white">
-              <ClipboardCheck className="h-4 w-4 text-indigo-400" />
+            <h4 className="flex items-center gap-2 text-sm font-bold text-slate-900">
+              <ClipboardCheck className="h-4 w-4 text-indigo-600" />
               Chi tiết từng câu ({detail.answers?.length || 0})
             </h4>
 
@@ -256,92 +308,92 @@ export function PracticeDetailModal({
               return (
                 <div
                   key={a.id || a.question_id || idx}
-                  className="rounded-2xl border border-white/10 bg-slate-900/65 p-4 space-y-3"
+                  className="rounded-2xl border border-slate-200 bg-white p-4 space-y-3 shadow-sm"
                 >
-                  <div className="text-sm font-semibold text-white">
-                    <span className="text-indigo-400">
+                  <div className="text-sm font-bold text-slate-900">
+                    <span className="text-indigo-600">
                       Câu {a.question?.order_num || idx + 1}:
                     </span>{' '}
                     {a.question?.question_text || ''}
                   </div>
 
                   <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-5">
-                    <div className="rounded-xl border border-violet-500/40 bg-gradient-to-br from-indigo-500/20 to-violet-500/15 p-2.5 text-center">
-                      <div className="text-[10px] font-bold uppercase text-slate-300">Điểm tổng</div>
-                      <div className={`text-xl font-extrabold ${scoreTextColorClass(a.score_total)}`}>
+                    <div className="rounded-xl border border-indigo-200 bg-indigo-50/75 p-2.5 text-center">
+                      <div className="text-[10px] font-bold uppercase text-indigo-700">Điểm tổng</div>
+                      <div className={`text-xl font-extrabold tabular-nums ${scoreTextColorClass(a.score_total)}`}>
                         {Number(a.score_total || 0).toFixed(1)}
                       </div>
                     </div>
 
-                    <div className="rounded-xl border border-white/10 bg-slate-950/75 p-2.5 text-center">
-                      <div className="text-[10px] font-bold uppercase text-slate-400">Phát âm</div>
-                      <div className={`text-lg font-bold ${scoreTextColorClass(prScore)}`}>
+                    <div className="rounded-xl border border-slate-200 bg-slate-50/75 p-2.5 text-center">
+                      <div className="text-[10px] font-bold uppercase text-slate-500">Phát âm</div>
+                      <div className={`text-lg font-bold tabular-nums ${scoreTextColorClass(prScore)}`}>
                         {Number(prScore).toFixed(1)}
                       </div>
                     </div>
 
-                    <div className="rounded-xl border border-white/10 bg-slate-950/75 p-2.5 text-center">
-                      <div className="text-[10px] font-bold uppercase text-slate-400">Mạch lạc</div>
-                      <div className={`text-lg font-bold ${ctxScore != null ? scoreTextColorClass(ctxScore) : 'text-slate-500'}`}>
+                    <div className="rounded-xl border border-slate-200 bg-slate-50/75 p-2.5 text-center">
+                      <div className="text-[10px] font-bold uppercase text-slate-500">Mạch lạc</div>
+                      <div className={`text-lg font-bold tabular-nums ${ctxScore != null ? scoreTextColorClass(ctxScore) : 'text-slate-400'}`}>
                         {formatScoreValue(ctxScore)}
                       </div>
                     </div>
 
-                    <div className="rounded-xl border border-white/10 bg-slate-950/75 p-2.5 text-center">
-                      <div className="text-[10px] font-bold uppercase text-slate-400">Từ vựng</div>
-                      <div className={`text-lg font-bold ${lexScore != null ? scoreTextColorClass(lexScore) : 'text-slate-500'}`}>
+                    <div className="rounded-xl border border-slate-200 bg-slate-50/75 p-2.5 text-center">
+                      <div className="text-[10px] font-bold uppercase text-slate-500">Từ vựng</div>
+                      <div className={`text-lg font-bold tabular-nums ${lexScore != null ? scoreTextColorClass(lexScore) : 'text-slate-400'}`}>
                         {formatScoreValue(lexScore)}
                       </div>
                     </div>
 
-                    <div className="rounded-xl border border-white/10 bg-slate-950/75 p-2.5 text-center">
-                      <div className="text-[10px] font-bold uppercase text-slate-400">Ngữ pháp</div>
-                      <div className={`text-lg font-bold ${gramScore != null ? scoreTextColorClass(gramScore) : 'text-slate-500'}`}>
+                    <div className="rounded-xl border border-slate-200 bg-slate-50/75 p-2.5 text-center">
+                      <div className="text-[10px] font-bold uppercase text-slate-500">Ngữ pháp</div>
+                      <div className={`text-lg font-bold tabular-nums ${gramScore != null ? scoreTextColorClass(gramScore) : 'text-slate-400'}`}>
                         {formatScoreValue(gramScore)}
                       </div>
                     </div>
                   </div>
 
                   {a.transcript && (
-                    <div className="rounded-xl border border-white/10 bg-slate-950/65 p-3">
-                      <div className="mb-1 flex items-center gap-1.5 text-xs font-semibold text-slate-400">
-                        <MessageSquareQuote className="h-3.5 w-3.5 text-indigo-400" />
+                    <div className="rounded-xl border border-slate-200 bg-slate-50/75 p-3">
+                      <div className="mb-1 flex items-center gap-1.5 text-xs font-semibold text-slate-500">
+                        <MessageSquareQuote className="h-3.5 w-3.5 text-indigo-600" />
                         Nội dung bạn đã nói:
                       </div>
-                      <p className="text-sm italic text-slate-100">&ldquo;{a.transcript}&rdquo;</p>
+                      <p className="text-sm italic text-slate-800">&ldquo;{a.transcript}&rdquo;</p>
                     </div>
                   )}
 
                   {gemini?.feedback_summary && (
-                    <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3">
-                      <div className="mb-1 flex items-center gap-1.5 text-xs font-semibold text-amber-300">
+                    <div className="rounded-xl border border-amber-200 bg-amber-50/80 p-3">
+                      <div className="mb-1 flex items-center gap-1.5 text-xs font-bold text-amber-800">
                         <Sparkles className="h-3.5 w-3.5" />
                         Nhận xét từ AI:
                       </div>
-                      <p className="text-xs leading-relaxed text-slate-100">
+                      <p className="text-xs leading-relaxed text-slate-700">
                         {gemini.feedback_summary}
                       </p>
                     </div>
                   )}
 
                   {errors.length > 0 && (
-                    <div className="rounded-xl border border-rose-500/30 bg-rose-500/10 p-3 space-y-2">
-                      <div className="flex items-center gap-1.5 text-xs font-semibold text-rose-300">
+                    <div className="rounded-xl border border-rose-200 bg-rose-50/80 p-3 space-y-2">
+                      <div className="flex items-center gap-1.5 text-xs font-bold text-rose-700">
                         <AlertCircle className="h-3.5 w-3.5" />
                         Lỗi ngữ pháp ({errors.length}):
                       </div>
                       {errors.map((err, eIdx) => (
                         <div
                           key={eIdx}
-                          className="border-l-2 border-rose-400/70 pl-2.5 text-xs space-y-0.5"
+                          className="border-l-2 border-rose-400 pl-2.5 text-xs space-y-0.5"
                         >
                           <div className="flex flex-wrap items-center gap-1.5">
-                            <span className="text-rose-300 line-through">{err.error_text}</span>
+                            <span className="text-rose-600 line-through">{err.error_text}</span>
                             <ArrowRight className="h-3 w-3 text-slate-400" />
-                            <span className="font-semibold text-emerald-300">{err.fix}</span>
+                            <span className="font-bold text-emerald-700">{err.fix}</span>
                           </div>
                           {err.explanation && (
-                            <div className="text-slate-300">{err.explanation}</div>
+                            <div className="text-slate-600">{err.explanation}</div>
                           )}
                         </div>
                       ))}
@@ -349,21 +401,21 @@ export function PracticeDetailModal({
                   )}
 
                   {gemini?.better_expression && (
-                    <div className="rounded-xl border border-sky-500/30 bg-sky-500/10 p-3">
-                      <div className="mb-1 flex items-center gap-1.5 text-xs font-semibold text-sky-300">
+                    <div className="rounded-xl border border-sky-200 bg-sky-50/80 p-3">
+                      <div className="mb-1 flex items-center gap-1.5 text-xs font-bold text-sky-800">
                         <Lightbulb className="h-3.5 w-3.5" />
                         Gợi ý diễn đạt tự nhiên hơn:
                       </div>
-                      <p className="text-xs italic text-slate-100">
+                      <p className="text-xs italic text-slate-700">
                         &ldquo;{gemini.better_expression}&rdquo;
                       </p>
                     </div>
                   )}
 
                   {a.audio_url ? (
-                    <div className="rounded-xl border border-white/10 bg-slate-950/75 p-3">
+                    <div className="rounded-xl border border-slate-200 bg-slate-50/80 p-3">
                       <div className="mb-1.5 flex items-center justify-between text-xs">
-                        <span className="flex items-center gap-1.5 font-semibold text-sky-300">
+                        <span className="flex items-center gap-1.5 font-semibold text-sky-700">
                           <Volume2 className="h-3.5 w-3.5" />
                           Bản ghi âm câu trả lời
                         </span>
@@ -371,7 +423,7 @@ export function PracticeDetailModal({
                           href={a.audio_url}
                           target="_blank"
                           rel="noreferrer"
-                          className="inline-flex items-center gap-1 text-slate-400 hover:text-white"
+                          className="inline-flex items-center gap-1 text-slate-500 hover:text-indigo-600 font-medium"
                         >
                           Mở file
                           <ExternalLink className="h-3 w-3" />
@@ -380,7 +432,7 @@ export function PracticeDetailModal({
                       <audio controls src={a.audio_url} className="h-9 w-full" />
                     </div>
                   ) : (
-                    <div className="flex items-center gap-1.5 text-xs italic text-slate-500">
+                    <div className="flex items-center gap-1.5 text-xs italic text-slate-400">
                       <MicOff className="h-3.5 w-3.5" />
                       Không có bản ghi âm
                     </div>
@@ -390,8 +442,8 @@ export function PracticeDetailModal({
             })}
           </div>
         </div>
-      )}
+        );
+      })()}
     </Modal>
   );
 }
-

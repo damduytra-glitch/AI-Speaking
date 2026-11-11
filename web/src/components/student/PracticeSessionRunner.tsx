@@ -16,12 +16,11 @@ import {
   Loader2,
   Mic,
   Play,
-  RotateCcw,
   Save,
   SkipForward,
   Sparkles,
-  Square,
   Timer,
+  Trash2,
   Volume2,
 } from 'lucide-react';
 import { evaluateAnswerWithGemini } from '@/lib/aiEval';
@@ -30,13 +29,13 @@ import {
   calculateBandScore,
   cancelSession,
   completeSession,
+  detectVoiceActivity,
   playBeep,
   playEndTone,
   playStartTone,
   saveAnswer,
   startSession,
   uploadPracticeAudio,
-  detectVoiceActivity,
 } from '@/lib/practice';
 import {
   formatScoreValue,
@@ -45,6 +44,13 @@ import {
   scoreTextColorClass,
 } from '@/lib/utils';
 import { Modal } from '@/components/ui/Modal';
+import {
+  LiveAudioVisualizer,
+  PageHeader,
+  ScoreRingGauge,
+  SkillRadarChart,
+  VoiceRecSphere,
+} from '@/components/ui/AnalyticsCharts';
 import { useToast } from '@/components/ToastProvider';
 import { TaskQuestionCard, TaskTypeBadge } from '@/components/TaskQuestionCard';
 import type {
@@ -79,6 +85,12 @@ interface LocalAnswerEntry {
   score_lexical: number | null;
   audio_url: string | null;
   result_json: AssessmentResultJson | null;
+}
+
+function formatTimerClock(sec: number): string {
+  const m = Math.floor(sec / 60);
+  const s = sec % 60;
+  return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
 }
 
 export function PracticeSessionRunner({
@@ -131,6 +143,8 @@ export function PracticeSessionRunner({
 
   // Practice-mode recording state
   const [recording, setRecording] = useState(false);
+  const [recordingSec, setRecordingSec] = useState(0);
+  const [liveStream, setLiveStream] = useState<MediaStream | null>(null);
   const [recordedBlob, setRecordedBlob] = useState<Blob | null>(null);
   const [recordedUrl, setRecordedUrl] = useState<string | null>(null);
   const [submittingAnswer, setSubmittingAnswer] = useState(false);
@@ -140,6 +154,7 @@ export function PracticeSessionRunner({
   // Exam-mode timer & queue state
   const [examStep, setExamStep] = useState<'ready' | 'prep' | 'record'>('ready');
   const [timeLeft, setTimeLeft] = useState(0);
+  const [examExitConfirmOpen, setExamExitConfirmOpen] = useState(false);
   const examTasksRef = useRef<Array<Promise<LocalAnswerEntry>>>([]);
   const examSubmittedIndicesRef = useRef<Set<number>>(new Set());
 
@@ -176,8 +191,20 @@ export function PracticeSessionRunner({
       }
     }
     streamRef.current = null;
+    setLiveStream(null);
     setRecording(false);
   }, []);
+
+  useEffect(() => {
+    if (!recording) {
+      setRecordingSec(0);
+      return;
+    }
+    const timer = window.setInterval(() => {
+      setRecordingSec((s) => s + 1);
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, [recording]);
 
   useEffect(() => {
     const isActive = phase === 'active' || phase === 'finalizing';
@@ -318,6 +345,7 @@ export function PracticeSessionRunner({
         },
       });
       streamRef.current = stream;
+      setLiveStream(stream);
       const recorder = new MediaRecorder(stream);
       chunksRef.current = [];
       recorder.ondataavailable = (e) => {
@@ -327,9 +355,10 @@ export function PracticeSessionRunner({
         stream.getTracks().forEach((t) => t.stop());
         streamRef.current = null;
         recorderRef.current = null;
+        setLiveStream(null);
         setRecording(false);
 
-        const blob = new Blob(chunksRef.current, { type: 'audio/webm' });
+        const blob = new Blob(chunksRef.current, { type: recorder.mimeType || 'audio/webm' });
         const vad = await detectVoiceActivity(blob);
         if (!vad.hasVoice) {
           showToast(`${vad.reason}. Vui lòng ghi âm lại rõ ràng hơn.`, 'danger');
@@ -497,6 +526,7 @@ export function PracticeSessionRunner({
           },
         });
         streamRef.current = stream;
+        setLiveStream(stream);
         const recorder = new MediaRecorder(stream);
         chunksRef.current = [];
         recorder.ondataavailable = (e) => {
@@ -506,9 +536,10 @@ export function PracticeSessionRunner({
           stream.getTracks().forEach((t) => t.stop());
           streamRef.current = null;
           recorderRef.current = null;
+          setLiveStream(null);
           setRecording(false);
 
-          const blob = new Blob(chunksRef.current, { type: 'audio/webm' });
+          const blob = new Blob(chunksRef.current, { type: recorder.mimeType || 'audio/webm' });
           const taskPromise = evaluateRecordedBlob(q, blob).catch(() => ({
             question: q,
             transcript: '',
@@ -608,69 +639,87 @@ export function PracticeSessionRunner({
 
     return (
       <div className="space-y-6 animate-slidein">
-        <div className="section-card text-center space-y-5 p-8">
-          <div className="inline-flex items-center gap-2 rounded-full border border-emerald-500/35 bg-emerald-500/15 px-3.5 py-1 text-xs font-bold text-emerald-300">
-            <Award className="h-4 w-4" />
-            Hoàn tất {mode === 'exam' ? 'Kỳ Thi Thử Speaking' : 'Buổi Luyện Tập'}
-          </div>
-
-          <h2 className="text-2xl font-extrabold text-white">{questionSet.title}</h2>
-
-          <div className="mx-auto inline-flex flex-col items-center rounded-2xl border border-indigo-500/40 bg-gradient-to-br from-indigo-500/20 to-sky-500/15 px-8 py-4">
-            <div className="text-xs font-semibold uppercase tracking-wider text-slate-300">
-              {bandInfo.title}
-            </div>
-            <div className="mt-1 text-4xl font-extrabold text-white">{bandInfo.band}</div>
-            <div className="mt-1 text-xs text-sky-300">{bandInfo.description}</div>
-          </div>
-
-          <div className="mx-auto grid max-w-3xl grid-cols-2 gap-3 sm:grid-cols-5">
-            <div className="rounded-xl border border-indigo-500/30 bg-slate-950/60 p-3">
-              <div className="text-2xl font-extrabold text-white">
-                {summaryTotals.score_total.toFixed(1)}
-              </div>
-              <div className="text-[11px] text-slate-400">Điểm tổng / 10</div>
-            </div>
-            <div className="rounded-xl border border-white/10 bg-slate-950/60 p-3">
-              <div className="text-xl font-bold text-emerald-400">
-                {summaryTotals.score_accuracy.toFixed(1)}
-              </div>
-              <div className="text-[11px] text-slate-400">Phát âm</div>
-            </div>
-            <div className="rounded-xl border border-white/10 bg-slate-950/60 p-3">
-              <div className="text-xl font-bold text-sky-400">
-                {formatScoreValue(summaryTotals.score_context)}
-              </div>
-              <div className="text-[11px] text-slate-400">Mạch lạc</div>
-            </div>
-            <div className="rounded-xl border border-white/10 bg-slate-950/60 p-3">
-              <div className="text-xl font-bold text-amber-400">
-                {formatScoreValue(summaryTotals.score_lexical)}
-              </div>
-              <div className="text-[11px] text-slate-400">Từ vựng</div>
-            </div>
-            <div className="rounded-xl border border-white/10 bg-slate-950/60 p-3">
-              <div className="text-xl font-bold text-indigo-400">
-                {formatScoreValue(summaryTotals.score_grammar)}
-              </div>
-              <div className="text-[11px] text-slate-400">Ngữ pháp</div>
-            </div>
-          </div>
-
-          <div className="flex flex-wrap justify-center gap-3 pt-2">
+        <PageHeader
+          eyebrow={mode === 'exam' ? 'KẾT QUẢ THI THỬ' : 'TỔNG KẾT LUYỆN TẬP'}
+          title={questionSet.title}
+          pill={
+            <>
+              <Award className="h-3.5 w-3.5 text-emerald-600" />
+              <span>Hoàn thành {entries.length} câu</span>
+            </>
+          }
+          action={
             <button
               type="button"
               onClick={onFinished}
-              className="rounded-xl bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-indigo-500"
+              className="btn-glow rounded-2xl bg-indigo-600 px-5 py-2.5 text-xs font-bold text-white shadow-md shadow-indigo-600/20 hover:bg-indigo-500 transition"
             >
-              Về Kho Bộ Đề &amp; Xem Lịch sử
+              Về Kho Bộ Đề &amp; Lịch sử
             </button>
+          }
+        />
+
+        <div className="section-card">
+          <div className="grid items-center gap-6 lg:grid-cols-12">
+            <div className="lg:col-span-4 flex flex-col items-center justify-center rounded-2xl border border-slate-100 bg-slate-50/75 p-5 text-center">
+              <ScoreRingGauge
+                score={summaryTotals.score_total}
+                size={164}
+                strokeWidth={14}
+                label="Tổng điểm / 10"
+              />
+              <div className="mt-3 inline-flex flex-col items-center rounded-2xl border border-indigo-200 bg-indigo-50/70 px-5 py-2">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-indigo-600">
+                  {bandInfo.title}
+                </span>
+                <span className="text-xl font-extrabold text-slate-900">{bandInfo.band}</span>
+                <span className="text-[11px] text-slate-500">{bandInfo.description}</span>
+              </div>
+            </div>
+
+            <div className="lg:col-span-4 flex justify-center">
+              <SkillRadarChart
+                size={235}
+                skills={[
+                  { label: 'Phát âm', value: summaryTotals.score_accuracy },
+                  { label: 'Mạch lạc', value: summaryTotals.score_context },
+                  { label: 'Từ vựng', value: summaryTotals.score_lexical },
+                  { label: 'Ngữ pháp', value: summaryTotals.score_grammar },
+                ]}
+              />
+            </div>
+
+            <div className="lg:col-span-4 space-y-2.5">
+              <div className="flex items-center justify-between rounded-2xl border border-slate-100 bg-slate-50/85 px-4 py-3 text-xs">
+                <span className="font-semibold text-slate-600">Phát âm</span>
+                <span className="text-base font-extrabold text-emerald-600 tabular-nums">
+                  {summaryTotals.score_accuracy.toFixed(1)}
+                </span>
+              </div>
+              <div className="flex items-center justify-between rounded-2xl border border-slate-100 bg-slate-50/85 px-4 py-3 text-xs">
+                <span className="font-semibold text-slate-600">Mạch lạc</span>
+                <span className="text-base font-extrabold text-sky-600 tabular-nums">
+                  {formatScoreValue(summaryTotals.score_context)}
+                </span>
+              </div>
+              <div className="flex items-center justify-between rounded-2xl border border-slate-100 bg-slate-50/85 px-4 py-3 text-xs">
+                <span className="font-semibold text-slate-600">Từ vựng</span>
+                <span className="text-base font-extrabold text-amber-600 tabular-nums">
+                  {formatScoreValue(summaryTotals.score_lexical)}
+                </span>
+              </div>
+              <div className="flex items-center justify-between rounded-2xl border border-slate-100 bg-slate-50/85 px-4 py-3 text-xs">
+                <span className="font-semibold text-slate-600">Ngữ pháp</span>
+                <span className="text-base font-extrabold text-indigo-600 tabular-nums">
+                  {formatScoreValue(summaryTotals.score_grammar)}
+                </span>
+              </div>
+            </div>
           </div>
         </div>
 
-        {/* Question-by-question breakdown */}
         <div className="section-card space-y-4">
-          <h3 className="text-base font-bold text-white">
+          <h3 className="text-base font-bold text-slate-900">
             Chi tiết từng câu ({entries.length})
           </h3>
           <div className="space-y-3">
@@ -679,28 +728,30 @@ export function PracticeSessionRunner({
               return (
                 <div
                   key={entry.question.id}
-                  className="rounded-xl border border-white/10 bg-slate-950/60 p-4 space-y-2.5"
+                  className="rounded-2xl border border-slate-200 bg-slate-50/65 p-4 space-y-2.5"
                 >
                   <div className="flex flex-wrap items-center justify-between gap-2">
-                    <div className="text-sm font-semibold text-white">
-                      <span className="text-indigo-400">
+                    <div className="text-sm font-semibold text-slate-900">
+                      <span className="text-indigo-600">
                         Câu {entry.question.order_num || i + 1}:
                       </span>{' '}
                       {entry.question.question_text}
                     </div>
-                    <span className={`text-lg font-extrabold ${scoreTextColorClass(entry.score_total)}`}>
+                    <span className={`text-lg font-extrabold tabular-nums ${scoreTextColorClass(entry.score_total)}`}>
                       {entry.score_total.toFixed(1)}
                     </span>
                   </div>
                   {entry.transcript && (
-                    <p className="text-xs italic text-slate-300">
+                    <p className="text-xs italic text-slate-600">
                       &ldquo;{entry.transcript}&rdquo;
                     </p>
                   )}
                   {gem?.feedback_summary && (
-                    <p className="text-xs text-amber-200">{gem.feedback_summary}</p>
+                    <div className="rounded-xl border border-amber-200 bg-amber-50/80 px-3 py-2 text-xs text-amber-900">
+                      {gem.feedback_summary}
+                    </div>
                   )}
-                  {entry.audio_url && <audio controls src={entry.audio_url} className="h-8 w-full" />}
+                  {entry.audio_url && <audio controls src={entry.audio_url} className="h-9 w-full" />}
                 </div>
               );
             })}
@@ -713,11 +764,14 @@ export function PracticeSessionRunner({
   // FINALIZING SCREEN
   if (phase === 'finalizing') {
     return (
-      <div className="section-card mx-auto mt-10 max-w-xl p-10 text-center space-y-4">
-        <Loader2 className="mx-auto h-10 w-10 animate-spin text-indigo-400" />
-        <h3 className="text-lg font-bold text-white">Đang tổng hợp &amp; chấm điểm bài thi...</h3>
-        <p className="text-sm text-slate-400">
-          Hệ thống AI đang chấm phát âm, ngữ pháp và nội dung cho tất cả các câu trả lời của bạn.
+      <div className="section-card mx-auto mt-8 max-w-xl p-8 sm:p-10 text-center space-y-5">
+        <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-indigo-50 text-indigo-600">
+          <Loader2 className="h-8 w-8 animate-spin" />
+        </div>
+        <h3 className="text-lg font-bold text-slate-900">Đang tổng hợp &amp; chấm điểm bài thi...</h3>
+        <LiveAudioVisualizer active={false} mode="processing" height={52} />
+        <p className="text-sm text-slate-500">
+          Hệ thống AI đang đánh giá phát âm, ngữ pháp và nội dung cho tất cả các câu trả lời của bạn.
         </p>
       </div>
     );
@@ -729,31 +783,32 @@ export function PracticeSessionRunner({
   if (mode === 'exam') {
     if (examStep === 'ready') {
       return (
-        <div className="section-card mx-auto max-w-2xl p-8 text-center space-y-5">
-          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-violet-500/20 text-violet-300">
-            <Timer className="h-7 w-7" />
+        <div className="section-card mx-auto max-w-2xl p-6 sm:p-10 text-center space-y-5">
+          <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-3xl border border-violet-200 bg-violet-50 text-violet-600 shadow-sm">
+            <Timer className="h-8 w-8" />
           </div>
           <div>
-            <span className="rounded-full border border-violet-500/35 bg-violet-500/15 px-3 py-0.5 text-xs font-semibold text-violet-300">
+            <span className="rounded-full border border-violet-200 bg-violet-50 px-3.5 py-1 text-xs font-semibold text-violet-700">
               {getExamTypeName(questionSet.exam_type)} · Thi thử bấm giờ
             </span>
-            <h2 className="mt-2 text-2xl font-bold text-white">{questionSet.title}</h2>
-            <p className="mt-2 text-sm text-slate-300">
-              Bài thi gồm <strong>{questions.length}</strong> câu hỏi nối tiếp tự động (Chuẩn bị → Bíp thu âm → Nộp). Hãy kiểm tra microphone trước khi bắt đầu.
+            <h2 className="mt-3 text-2xl font-extrabold text-slate-900">{questionSet.title}</h2>
+            <p className="mt-2 text-sm leading-relaxed text-slate-600">
+              Bài thi gồm <strong className="text-slate-900">{questions.length}</strong> câu hỏi nối tiếp tự động
+              (Chuẩn bị → Bíp thu âm → Nộp). Hãy kiểm tra micro trước khi bắt đầu.
             </p>
           </div>
           <div className="flex flex-wrap justify-center gap-3 pt-2">
             <button
               type="button"
               onClick={onExit}
-              className="rounded-xl border border-white/15 bg-white/5 px-4 py-2.5 text-sm font-medium text-slate-300 hover:bg-white/10"
+              className="rounded-2xl border border-slate-200 bg-white px-5 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-50 transition"
             >
               Quay lại
             </button>
             <button
               type="button"
               onClick={handleStartExam}
-              className="btn-glow inline-flex items-center gap-2 rounded-xl bg-violet-600 px-6 py-2.5 text-sm font-bold text-white shadow-lg shadow-violet-600/30 hover:bg-violet-500"
+              className="btn-glow inline-flex items-center gap-2 rounded-2xl bg-indigo-600 px-6 py-2.5 text-sm font-bold text-white shadow-lg shadow-indigo-600/25 hover:bg-indigo-500 transition"
             >
               <Play className="h-4 w-4" />
               Bắt đầu Thi Ngay
@@ -764,22 +819,22 @@ export function PracticeSessionRunner({
     }
 
     return (
-      <div className="space-y-6">
+      <div className="space-y-5">
         <div className="section-card flex flex-wrap items-center justify-between gap-3">
           <div>
-            <span className="text-xs font-bold uppercase tracking-wider text-violet-300">
+            <span className="text-[11px] font-bold uppercase tracking-[0.12em] text-indigo-600">
               {questionSet.title} · Câu {currentIndex + 1}/{questions.length}
             </span>
-            <h3 className="text-base font-bold text-white">
+            <h3 className="mt-0.5 text-lg font-extrabold text-slate-900">
               {examStep === 'prep' ? 'Thời gian chuẩn bị ý tưởng' : 'Đang ghi âm câu trả lời'}
             </h3>
           </div>
 
           <div
-            className={`flex items-center gap-2 rounded-2xl border px-5 py-2.5 text-xl font-extrabold font-mono ${
+            className={`flex items-center gap-2 rounded-2xl border px-5 py-2.5 text-xl font-extrabold font-mono shadow-sm ${
               examStep === 'record'
-                ? 'border-rose-500/50 bg-rose-500/15 text-rose-300'
-                : 'border-amber-500/50 bg-amber-500/15 text-amber-300'
+                ? 'border-rose-200 bg-rose-50 text-rose-600'
+                : 'border-amber-200 bg-amber-50 text-amber-700'
             }`}
           >
             <Clock className="h-5 w-5" />
@@ -793,7 +848,7 @@ export function PracticeSessionRunner({
               <div className="flex items-center justify-between gap-2">
                 <TaskTypeBadge taskType={currentQuestion.task_type} />
                 {currentQuestion.part_title && (
-                  <span className="text-xs font-medium text-slate-400">
+                  <span className="text-xs font-medium text-slate-500">
                     {currentQuestion.part_title}
                   </span>
                 )}
@@ -802,16 +857,31 @@ export function PracticeSessionRunner({
             </>
           )}
 
-          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-white/10 pt-4">
+          {/* Exam Studio Wavefront */}
+          <div className="rounded-2xl border border-slate-200 bg-slate-50/80 p-5 flex flex-col items-center gap-3">
+            <LiveAudioVisualizer
+              stream={liveStream}
+              active={examStep === 'record' && recording}
+              mode={examStep === 'record' ? 'recording' : 'idle'}
+              height={64}
+            />
+            <div className="rounded-full border border-slate-200 bg-white px-5 py-2 text-xs font-semibold text-slate-700 shadow-sm">
+              {examStep === 'record' ? (
+                <span className="inline-flex items-center gap-2 text-rose-600">
+                  <span className="h-2 w-2 rounded-full bg-rose-500 animate-ping" />
+                  Đang lắng nghe bài nói của bạn...
+                </span>
+              ) : (
+                'Hãy đọc kỹ đề bài và phác thảo nhanh các ý chính'
+              )}
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 pt-4">
             <button
               type="button"
-              onClick={() => {
-                if (window.confirm('Thoát giữa giờ sẽ hủy bài thi thử hiện tại. Tiếp tục?')) {
-                  stopRecorderAndStream();
-                  onExit();
-                }
-              }}
-              className="rounded-xl border border-rose-500/35 bg-rose-500/10 px-4 py-2 text-xs font-semibold text-rose-300 hover:bg-rose-500/20"
+              onClick={() => setExamExitConfirmOpen(true)}
+              className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-2 text-xs font-semibold text-rose-700 hover:bg-rose-100 transition"
             >
               Thoát bài thi
             </button>
@@ -819,7 +889,7 @@ export function PracticeSessionRunner({
             <button
               type="button"
               onClick={handleAdvanceExamStep}
-              className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-indigo-500"
+              className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white shadow-md shadow-indigo-600/20 hover:bg-indigo-500 transition"
             >
               {examStep === 'prep' ? (
                 <>
@@ -840,205 +910,348 @@ export function PracticeSessionRunner({
             </button>
           </div>
         </div>
+
+        <Modal
+          open={examExitConfirmOpen}
+          onClose={() => setExamExitConfirmOpen(false)}
+          maxWidthClass="max-w-md"
+          title="Thoát bài thi thử?"
+        >
+          <div className="space-y-4 text-sm text-slate-600">
+            <p>
+              Thoát giữa giờ sẽ hủy bài thi thử hiện tại và các câu chưa tổng hợp sẽ không được lưu. Bạn vẫn muốn thoát?
+            </p>
+            <div className="flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setExamExitConfirmOpen(false)}
+                className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+              >
+                Tiếp tục thi
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setExamExitConfirmOpen(false);
+                  stopRecorderAndStream();
+                  onExit();
+                }}
+                className="inline-flex items-center gap-1.5 rounded-xl bg-rose-600 px-4 py-2 text-xs font-semibold text-white hover:bg-rose-500"
+              >
+                Xác nhận thoát
+              </button>
+            </div>
+          </div>
+        </Modal>
       </div>
     );
   }
 
   // =========================================================================
-  // ACTIVE PRACTICE RUNNER
+  // ACTIVE PRACTICE RUNNER (HABLAYA VOICE STUDIO LAYOUT)
   // =========================================================================
   const answeredCount = Object.keys(answersMap).length;
   const geminiFeedback = currentSavedAnswer?.result_json?.gemini_eval;
   const otfTips = currentSavedAnswer?.result_json?.overall_transformer_feedback?.tips || [];
   const grammarErrors = geminiFeedback?.grammar_errors || [];
 
+  const studioStatusText = submittingAnswer
+    ? 'AI đang phân tích phát âm và ngữ pháp...'
+    : recording
+      ? `Đang lắng nghe · ${formatTimerClock(recordingSec)}`
+      : recordedBlob
+        ? 'Đã ghi âm xong — Nghe lại hoặc nhấn Chấm câu trả lời này'
+        : currentSavedAnswer
+          ? 'Câu này đã chấm · Nhấn REC nếu bạn muốn luyện lại'
+          : 'Nhấn REC để bắt đầu nói câu trả lời';
+
   return (
     <div className="space-y-5">
-      {/* Top Bar */}
-      <div className="section-card flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="rounded-full border border-sky-500/35 bg-sky-500/15 px-2.5 py-0.5 text-[11px] font-semibold text-sky-300">
-              {getExamTypeName(questionSet.exam_type)} · Luyện tập
-            </span>
-            <span className="text-xs text-slate-400">
+      {/* Studio Top Bar */}
+      <PageHeader
+        eyebrow={`LUYỆN SPEAKING · ${getExamTypeName(questionSet.exam_type).toUpperCase()}`}
+        title={questionSet.title}
+        pill={
+          <>
+            <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" />
+            <span>
               Đã chấm {answeredCount}/{questions.length} câu
             </span>
-          </div>
-          <h2 className="mt-1 text-lg font-bold text-white">{questionSet.title}</h2>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-2">
-          <button
-            type="button"
-            onClick={handleSaveDraftAndExit}
-            disabled={recording || submittingAnswer}
-            className="inline-flex items-center gap-1.5 rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-xs font-semibold text-slate-200 hover:bg-white/10 disabled:opacity-50"
-          >
-            <Save className="h-3.5 w-3.5" />
-            Lưu nháp &amp; Thoát
-          </button>
-          <button
-            type="button"
-            onClick={() => setDiscardConfirmOpen(true)}
-            disabled={recording || submittingAnswer}
-            className="inline-flex items-center gap-1.5 rounded-xl border border-rose-500/35 bg-rose-500/10 px-3 py-2 text-xs font-semibold text-rose-300 hover:bg-rose-500/20 disabled:opacity-50"
-          >
-            <ArrowLeft className="h-3.5 w-3.5" />
-            Hủy nháp
-          </button>
-          <button
-            type="button"
-            disabled={answeredCount === 0 || finishingSession || submittingAnswer || recording}
-            onClick={handleFinishPractice}
-            className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-600 px-4 py-2 text-xs font-bold text-white hover:bg-emerald-500 disabled:opacity-45"
-          >
-            {finishingSession ? (
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-            ) : (
-              <Flag className="h-3.5 w-3.5" />
-            )}
-            Hoàn tất &amp; Xem tổng kết
-          </button>
-        </div>
-      </div>
-
-      {/* Question Pill Strip */}
-      <div className="flex flex-wrap items-center gap-2">
-        {questions.map((q, idx) => {
-          const isDone = Boolean(answersMap[q.id]);
-          const isCurrent = idx === currentIndex;
-          return (
+          </>
+        }
+        action={
+          <div className="flex flex-wrap items-center gap-2">
             <button
-              key={q.id}
               type="button"
-              onClick={() => handleSelectQuestionIndex(idx)}
-              className={`inline-flex items-center gap-1.5 rounded-xl border px-3 py-1.5 text-xs font-semibold transition ${
-                isCurrent
-                  ? 'border-indigo-500 bg-indigo-600 text-white shadow'
-                  : isDone
-                    ? 'border-emerald-500/40 bg-emerald-500/15 text-emerald-300'
-                    : 'border-white/10 bg-slate-900/60 text-slate-400 hover:text-white'
-              }`}
+              onClick={handleSaveDraftAndExit}
+              disabled={recording || submittingAnswer}
+              className="inline-flex items-center gap-1.5 rounded-2xl border border-slate-200 bg-white px-3.5 py-2 text-xs font-semibold text-slate-700 shadow-sm hover:bg-slate-50 disabled:opacity-50 transition"
             >
-              {isDone && <CheckCircle2 className="h-3.5 w-3.5" />}
-              Câu {q.order_num || idx + 1}
+              <Save className="h-3.5 w-3.5" />
+              Lưu nháp
             </button>
-          );
-        })}
+            <button
+              type="button"
+              onClick={() => setDiscardConfirmOpen(true)}
+              disabled={recording || submittingAnswer}
+              className="inline-flex items-center gap-1.5 rounded-2xl border border-rose-200 bg-rose-50 px-3.5 py-2 text-xs font-semibold text-rose-700 hover:bg-rose-100 disabled:opacity-50 transition"
+            >
+              <ArrowLeft className="h-3.5 w-3.5" />
+              Hủy
+            </button>
+            <button
+              type="button"
+              disabled={answeredCount === 0 || finishingSession || submittingAnswer || recording}
+              onClick={handleFinishPractice}
+              className="inline-flex items-center gap-1.5 rounded-2xl bg-emerald-600 px-4 py-2 text-xs font-bold text-white shadow-md shadow-emerald-600/20 hover:bg-emerald-500 disabled:opacity-45 transition"
+            >
+              {finishingSession ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Flag className="h-3.5 w-3.5" />
+              )}
+              Hoàn tất bài
+            </button>
+          </div>
+        }
+      />
+
+      {/* Question Pill Strip + Progress Bar */}
+      <div className="space-y-2.5">
+        <div className="flex items-center gap-2 overflow-x-auto pb-1">
+          {questions.map((q, idx) => {
+            const isDone = Boolean(answersMap[q.id]);
+            const isCurrent = idx === currentIndex;
+            return (
+              <button
+                key={q.id}
+                type="button"
+                onClick={() => handleSelectQuestionIndex(idx)}
+                className={`inline-flex shrink-0 items-center gap-1.5 rounded-2xl border px-3.5 py-2 text-xs font-semibold transition-all active:scale-95 ${
+                  isCurrent
+                    ? 'border-indigo-600 bg-indigo-600 text-white shadow-md shadow-indigo-600/20'
+                    : isDone
+                      ? 'border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
+                      : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
+                }`}
+              >
+                {isDone && <CheckCircle2 className="h-3.5 w-3.5" />}
+                Câu {q.order_num || idx + 1}
+              </button>
+            );
+          })}
+        </div>
+        <div className="h-1.5 w-full overflow-hidden rounded-full bg-slate-200/80">
+          <div
+            className="h-full rounded-full bg-gradient-to-r from-indigo-600 to-emerald-500 transition-all duration-500 ease-out"
+            style={{
+              width: `${questions.length > 0 ? Math.round((answeredCount / questions.length) * 100) : 0}%`,
+            }}
+          />
+        </div>
       </div>
 
-      {/* Question Card + Recorder */}
+      {/* Main 2-Column HablaYa Voice Studio */}
       {currentQuestion && (
-        <div className="section-card space-y-5">
-          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-white/10 pb-3">
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="rounded-lg bg-indigo-600/25 px-2.5 py-1 text-xs font-bold text-indigo-300">
-                Câu {currentQuestion.order_num || currentIndex + 1}/{questions.length}
-              </span>
-              {currentQuestion.part_title && (
-                <span className="text-xs text-slate-300">{currentQuestion.part_title}</span>
-              )}
-              <TaskTypeBadge taskType={currentQuestion.task_type} />
+        <div className="grid gap-6 lg:grid-cols-12">
+          {/* Left Studio Card: Question Prompt + REC Sphere + Live Equalizer */}
+          <div className="section-card lg:col-span-7 flex flex-col justify-between space-y-5">
+            <div key={currentQuestion.id} className="space-y-4 animate-tab-in">
+              <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-3">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="rounded-xl bg-indigo-50 border border-indigo-200 px-2.5 py-1 text-xs font-bold text-indigo-700">
+                    Câu {currentQuestion.order_num || currentIndex + 1}/{questions.length}
+                  </span>
+                  {currentQuestion.part_title && (
+                    <span className="text-xs font-medium text-slate-500">
+                      {currentQuestion.part_title}
+                    </span>
+                  )}
+                  <TaskTypeBadge taskType={currentQuestion.task_type} />
+                </div>
+
+                <div className="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    disabled={currentIndex === 0 || recording || submittingAnswer}
+                    onClick={() => handleSelectQuestionIndex(currentIndex - 1)}
+                    className="rounded-xl border border-slate-200 bg-white p-2 text-slate-600 hover:bg-slate-50 disabled:opacity-40 transition"
+                    aria-label="Câu trước"
+                  >
+                    <ChevronLeft className="h-4 w-4" />
+                  </button>
+                  <button
+                    type="button"
+                    disabled={currentIndex === questions.length - 1 || recording || submittingAnswer}
+                    onClick={() => handleSelectQuestionIndex(currentIndex + 1)}
+                    className="rounded-xl border border-slate-200 bg-white p-2 text-slate-600 hover:bg-slate-50 disabled:opacity-40 transition"
+                    aria-label="Câu sau"
+                  >
+                    <ChevronRight className="h-4 w-4" />
+                  </button>
+                </div>
+              </div>
+
+              <TaskQuestionCard question={currentQuestion} />
             </div>
 
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                disabled={currentIndex === 0 || recording || submittingAnswer}
-                onClick={() => handleSelectQuestionIndex(currentIndex - 1)}
-                className="rounded-lg border border-white/15 bg-white/5 p-1.5 text-slate-200 disabled:opacity-40"
-              >
-                <ChevronLeft className="h-4 w-4" />
-              </button>
-              <button
-                type="button"
-                disabled={currentIndex === questions.length - 1 || recording || submittingAnswer}
-                onClick={() => handleSelectQuestionIndex(currentIndex + 1)}
-                className="rounded-lg border border-white/15 bg-white/5 p-1.5 text-slate-200 disabled:opacity-40"
-              >
-                <ChevronRight className="h-4 w-4" />
-              </button>
+            {/* Voice Studio Centerpiece (REC Sphere + Equalizer + Listening Pill Bar) */}
+            <div className="rounded-3xl border border-slate-200/90 bg-gradient-to-b from-slate-50/80 to-white p-5 sm:p-6 flex flex-col items-center gap-4">
+              <VoiceRecSphere
+                recording={recording}
+                processing={submittingAnswer}
+                hasRecorded={Boolean(recordedBlob)}
+                size="lg"
+                onClick={handleTogglePracticeRecord}
+              />
+
+              <LiveAudioVisualizer
+                stream={liveStream}
+                active={recording}
+                mode={
+                  submittingAnswer
+                    ? 'processing'
+                    : recording
+                      ? 'recording'
+                      : recordedBlob
+                        ? 'ready'
+                        : 'idle'
+                }
+                barCount={13}
+                height={68}
+              />
+
+              <div className="w-full max-w-md rounded-full border border-slate-200 bg-white px-4 py-2.5 text-center text-xs font-semibold text-slate-700 shadow-sm">
+                {recording ? (
+                  <span className="inline-flex items-center justify-center gap-2 text-rose-600">
+                    <span className="h-2 w-2 rounded-full bg-rose-500 animate-ping" />
+                    {studioStatusText}
+                  </span>
+                ) : (
+                  <span>{studioStatusText}</span>
+                )}
+              </div>
+
+              {recordedUrl && (
+                <div className="w-full max-w-md space-y-3 pt-1 animate-fadein">
+                  <audio controls src={recordedUrl} className="h-9 w-full" />
+                  {!recording && (
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        disabled={submittingAnswer}
+                        onClick={handleSubmitPracticeAnswer}
+                        className="btn-glow inline-flex flex-1 items-center justify-center gap-2 rounded-2xl bg-indigo-600 px-5 py-3 text-sm font-bold text-white shadow-lg shadow-indigo-600/25 hover:bg-indigo-500 disabled:opacity-50 transition"
+                      >
+                        {submittingAnswer ? (
+                          <>
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                            AI đang chấm điểm...
+                          </>
+                        ) : (
+                          <>
+                            <Sparkles className="h-4 w-4" />
+                            Chấm câu trả lời này
+                          </>
+                        )}
+                      </button>
+                      <button
+                        type="button"
+                        disabled={submittingAnswer}
+                        onClick={clearPendingAudio}
+                        title="Xóa bản thu âm này"
+                        aria-label="Xóa bản thu âm này"
+                        className="shrink-0 rounded-2xl border border-slate-200 bg-white p-3 text-slate-500 hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600 disabled:opacity-45 transition"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           </div>
 
-          <TaskQuestionCard question={currentQuestion} />
-
-          {/* Recording Controls */}
-          <div className="rounded-2xl border border-white/10 bg-slate-950/60 p-4 space-y-3">
-            <div className="flex flex-wrap items-center justify-center gap-3">
-              <button
-                type="button"
-                disabled={submittingAnswer}
-                onClick={handleTogglePracticeRecord}
-                className={`inline-flex items-center gap-2 rounded-xl px-5 py-3 text-sm font-bold text-white transition ${
-                  recording
-                    ? 'bg-rose-600 recording-pulse'
-                    : 'bg-indigo-600 hover:bg-indigo-500 shadow-lg shadow-indigo-600/25'
-                } disabled:opacity-50`}
+          {/* Right Studio Card: Live Pronunciation & 4 Skill Rows (Reference Donut Panel) */}
+          <div className="section-card lg:col-span-5 flex flex-col justify-between space-y-5">
+            <div className="flex items-center justify-between gap-2">
+              <h3 className="text-lg font-extrabold text-slate-900">Đánh giá Phát âm</h3>
+              <span
+                className={`rounded-full border px-3 py-0.5 text-xs font-semibold transition-colors ${
+                  submittingAnswer
+                    ? 'border-indigo-200 bg-indigo-50 text-indigo-700 animate-pulse'
+                    : currentSavedAnswer
+                      ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                      : 'border-slate-200 bg-slate-50 text-slate-500'
+                }`}
               >
-                {recording ? (
-                  <>
-                    <Square className="h-4 w-4" />
-                    Dừng ghi âm
-                  </>
-                ) : recordedBlob ? (
-                  <>
-                    <RotateCcw className="h-4 w-4" />
-                    Ghi âm lại
-                  </>
-                ) : (
-                  <>
-                    <Mic className="h-4 w-4" />
-                    Bắt đầu ghi âm câu trả lời
-                  </>
-                )}
-              </button>
-
-              {recordedBlob && !recording && (
-                <button
-                  type="button"
-                  disabled={submittingAnswer}
-                  onClick={handleSubmitPracticeAnswer}
-                  className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-5 py-3 text-sm font-bold text-white hover:bg-emerald-500 disabled:opacity-50"
-                >
-                  {submittingAnswer ? (
-                    <>
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                      AI đang chấm...
-                    </>
-                  ) : (
-                    <>
-                      <Sparkles className="h-4 w-4" />
-                      Chấm câu trả lời này
-                    </>
-                  )}
-                </button>
-              )}
+                {submittingAnswer
+                  ? 'Đang chấm AI...'
+                  : currentSavedAnswer
+                    ? 'Đã chấm xong'
+                    : 'Chờ câu trả lời'}
+              </span>
             </div>
 
-            {recordedUrl && (
-              <div className="mx-auto max-w-xl">
-                <audio controls src={recordedUrl} className="h-9 w-full" />
+            <div className="flex flex-col items-center justify-center py-2">
+              <ScoreRingGauge
+                score={submittingAnswer ? null : currentSavedAnswer ? currentSavedAnswer.score_total : null}
+                size={168}
+                strokeWidth={14}
+                label="Tổng điểm / 10"
+                sublabel={
+                  submittingAnswer
+                    ? 'Đang phân tích phát âm, ngữ điệu và ngữ pháp...'
+                    : currentSavedAnswer
+                      ? 'Kết quả phân tích chi tiết của câu hiện tại'
+                      : 'Ghi âm và gửi để xem điểm trực tiếp'
+                }
+              />
+            </div>
+
+            <div className="space-y-2.5">
+              <div className="flex items-center justify-between rounded-2xl border border-slate-100 bg-slate-50/90 px-4 py-3 text-xs">
+                <span className="font-semibold text-slate-600">Phát âm</span>
+                <span className="font-extrabold text-emerald-600 tabular-nums">
+                  {currentSavedAnswer ? currentSavedAnswer.score_accuracy.toFixed(1) : '--'}
+                </span>
               </div>
-            )}
+              <div className="flex items-center justify-between rounded-2xl border border-slate-100 bg-slate-50/90 px-4 py-3 text-xs">
+                <span className="font-semibold text-slate-600">Mạch lạc</span>
+                <span className="font-extrabold text-sky-600 tabular-nums">
+                  {currentSavedAnswer ? formatScoreValue(currentSavedAnswer.score_context) : '--'}
+                </span>
+              </div>
+              <div className="flex items-center justify-between rounded-2xl border border-slate-100 bg-slate-50/90 px-4 py-3 text-xs">
+                <span className="font-semibold text-slate-600">Từ vựng</span>
+                <span className="font-extrabold text-amber-600 tabular-nums">
+                  {currentSavedAnswer ? formatScoreValue(currentSavedAnswer.score_lexical) : '--'}
+                </span>
+              </div>
+              <div className="flex items-center justify-between rounded-2xl border border-slate-100 bg-slate-50/90 px-4 py-3 text-xs">
+                <span className="font-semibold text-slate-600">Ngữ pháp</span>
+                <span className="font-extrabold text-indigo-600 tabular-nums">
+                  {currentSavedAnswer ? formatScoreValue(currentSavedAnswer.score_grammar) : '--'}
+                </span>
+              </div>
+            </div>
           </div>
         </div>
       )}
 
-      {/* Immediate Result Feedback */}
+      {/* Detailed Immediate AI Feedback Below Studio */}
       {currentSavedAnswer && (
-        <div className="section-card space-y-4 border-emerald-500/30 animate-slidein">
-          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-white/10 pb-3">
-            <h3 className="flex items-center gap-2 text-base font-bold text-white">
-              <Sparkles className="h-5 w-5 text-emerald-400" />
-              Kết quả đánh giá Câu {currentQuestion?.order_num || currentIndex + 1}
+        <div className="section-card space-y-4 border-emerald-200 animate-slidein">
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-3">
+            <h3 className="flex items-center gap-2 text-base font-bold text-slate-900">
+              <Sparkles className="h-5 w-5 text-emerald-600" />
+              Nhận xét chi tiết Câu {currentQuestion?.order_num || currentIndex + 1}
             </h3>
             {currentIndex < questions.length - 1 && (
               <button
                 type="button"
                 onClick={() => handleSelectQuestionIndex(currentIndex + 1)}
-                className="inline-flex items-center gap-1.5 rounded-xl bg-indigo-600 px-3.5 py-1.5 text-xs font-semibold text-white hover:bg-indigo-500"
+                className="inline-flex items-center gap-1.5 rounded-xl bg-indigo-600 px-3.5 py-2 text-xs font-semibold text-white shadow-sm hover:bg-indigo-500 transition"
               >
                 Câu tiếp theo
                 <ArrowRight className="h-3.5 w-3.5" />
@@ -1046,72 +1259,40 @@ export function PracticeSessionRunner({
             )}
           </div>
 
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
-            <div className="rounded-xl border border-indigo-500/35 bg-indigo-500/15 p-3 text-center">
-              <div className="text-[11px] text-slate-300">Điểm tổng</div>
-              <div className={`text-2xl font-extrabold ${scoreTextColorClass(currentSavedAnswer.score_total)}`}>
-                {currentSavedAnswer.score_total.toFixed(1)}
-              </div>
-            </div>
-            <div className="rounded-xl border border-white/10 bg-slate-950/60 p-3 text-center">
-              <div className="text-[11px] text-slate-400">Phát âm</div>
-              <div className="text-xl font-bold text-emerald-400">
-                {currentSavedAnswer.score_accuracy.toFixed(1)}
-              </div>
-            </div>
-            <div className="rounded-xl border border-white/10 bg-slate-950/60 p-3 text-center">
-              <div className="text-[11px] text-slate-400">Mạch lạc</div>
-              <div className="text-xl font-bold text-sky-400">
-                {formatScoreValue(currentSavedAnswer.score_context)}
-              </div>
-            </div>
-            <div className="rounded-xl border border-white/10 bg-slate-950/60 p-3 text-center">
-              <div className="text-[11px] text-slate-400">Từ vựng</div>
-              <div className="text-xl font-bold text-amber-400">
-                {formatScoreValue(currentSavedAnswer.score_lexical)}
-              </div>
-            </div>
-            <div className="rounded-xl border border-white/10 bg-slate-950/60 p-3 text-center">
-              <div className="text-[11px] text-slate-400">Ngữ pháp</div>
-              <div className="text-xl font-bold text-indigo-400">
-                {formatScoreValue(currentSavedAnswer.score_grammar)}
-              </div>
-            </div>
-          </div>
-
           {currentSavedAnswer.transcript && (
-            <div className="rounded-xl border border-white/10 bg-slate-950/60 p-3 text-sm italic text-slate-200">
+            <div className="rounded-2xl border border-slate-200 bg-slate-50/80 p-3.5 text-sm italic text-slate-800">
               &ldquo;{currentSavedAnswer.transcript}&rdquo;
             </div>
           )}
 
           {geminiFeedback?.feedback_summary && (
-            <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-xs leading-relaxed text-amber-100">
+            <div className="rounded-2xl border border-amber-200 bg-amber-50/80 p-3.5 text-xs leading-relaxed text-amber-900">
               <strong>Nhận xét AI:</strong> {geminiFeedback.feedback_summary}
             </div>
           )}
 
           {grammarErrors.length > 0 && (
-            <div className="rounded-xl border border-rose-500/30 bg-rose-500/10 p-3 space-y-1.5 text-xs">
-              <div className="flex items-center gap-1.5 font-semibold text-rose-300">
+            <div className="rounded-2xl border border-rose-200 bg-rose-50/75 p-3.5 space-y-2 text-xs">
+              <div className="flex items-center gap-1.5 font-bold text-rose-700">
                 <AlertCircle className="h-3.5 w-3.5" />
-                Lỗi ngữ pháp cần sửa:
+                Lỗi ngữ pháp cần sửa ({grammarErrors.length}):
               </div>
               {grammarErrors.map((err, idx) => (
-                <div key={idx} className="pl-2 border-l-2 border-rose-400/60 space-y-0.5">
+                <div key={idx} className="pl-2.5 border-l-2 border-rose-400 space-y-0.5">
                   <div>
-                    <span className="text-rose-300 line-through">{err.error_text}</span> →{' '}
-                    <span className="font-semibold text-emerald-300">{err.fix}</span>
+                    <span className="text-rose-600 line-through">{err.error_text}</span>{' '}
+                    <span className="text-slate-400">→</span>{' '}
+                    <span className="font-bold text-emerald-700">{err.fix}</span>
                   </div>
-                  {err.explanation && <div className="text-slate-300">{err.explanation}</div>}
+                  {err.explanation && <div className="text-slate-600">{err.explanation}</div>}
                 </div>
               ))}
             </div>
           )}
 
           {geminiFeedback?.better_expression && (
-            <div className="rounded-xl border border-sky-500/30 bg-sky-500/10 p-3 text-xs text-sky-100">
-              <div className="mb-1 flex items-center gap-1.5 font-semibold text-sky-300">
+            <div className="rounded-2xl border border-sky-200 bg-sky-50/75 p-3.5 text-xs text-slate-700">
+              <div className="mb-1 flex items-center gap-1.5 font-bold text-sky-800">
                 <Lightbulb className="h-3.5 w-3.5" />
                 Câu mẫu gợi ý:
               </div>
@@ -1120,8 +1301,8 @@ export function PracticeSessionRunner({
           )}
 
           {otfTips.length > 0 && (
-            <div className="rounded-xl border border-white/10 bg-slate-950/60 p-3 text-xs text-slate-300 space-y-1">
-              <div className="font-semibold text-amber-300">Gợi ý cải thiện phát âm:</div>
+            <div className="clean-feedback-box text-xs text-slate-700 space-y-1">
+              <div className="font-bold text-amber-800">Gợi ý cải thiện phát âm:</div>
               {otfTips.map((tip, idx) => (
                 <div key={idx}>• {tip}</div>
               ))}
@@ -1129,8 +1310,8 @@ export function PracticeSessionRunner({
           )}
 
           {currentSavedAnswer.audio_url && (
-            <div className="flex items-center gap-2 rounded-xl border border-white/10 bg-slate-950/60 px-3 py-2">
-              <Volume2 className="h-4 w-4 text-sky-400" />
+            <div className="flex items-center gap-2 rounded-2xl border border-slate-200 bg-slate-50 px-3.5 py-2">
+              <Volume2 className="h-4 w-4 text-sky-600 shrink-0" />
               <audio controls src={currentSavedAnswer.audio_url} className="h-8 w-full" />
             </div>
           )}
@@ -1144,16 +1325,16 @@ export function PracticeSessionRunner({
         maxWidthClass="max-w-md"
         title="Hủy bản nháp luyện tập?"
       >
-        <div className="space-y-4 text-sm text-slate-200">
+        <div className="space-y-4 text-sm text-slate-600">
           <p>
             Nếu hủy bản nháp, toàn bộ câu đã trả lời trong phiên luyện tập chưa hoàn tất này sẽ bị xóa. Bạn có thể chọn{' '}
-            <strong>Lưu nháp &amp; Thoát</strong> để giữ lại tiến trình.
+            <strong className="text-slate-900">Lưu nháp</strong> để giữ lại tiến trình.
           </p>
           <div className="flex justify-end gap-2">
             <button
               type="button"
               onClick={() => setDiscardConfirmOpen(false)}
-              className="rounded-xl border border-white/15 bg-white/5 px-4 py-2 text-xs font-semibold text-slate-300"
+              className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
             >
               Ở lại làm tiếp
             </button>

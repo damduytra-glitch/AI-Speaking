@@ -4,12 +4,12 @@ import React, { useMemo, useRef, useState } from 'react';
 import {
   AlertTriangle,
   AudioWaveform,
+  BarChart3,
   CheckCircle2,
   Clock,
   CloudUpload,
   FileSpreadsheet,
   GraduationCap,
-  Languages,
   Loader2,
   Mic,
   Presentation,
@@ -24,6 +24,11 @@ import {
   hasVoiceEnrolled,
   parseVoiceEmbeddings,
 } from '@/lib/utils';
+import {
+  ClassroomTimelineStrip,
+  PageHeader,
+  RatioDonutChart,
+} from './ui/AnalyticsCharts';
 import { useToast } from './ToastProvider';
 import type { ClassroomAnalysisResult, ClassroomRoleStats, Profile } from '@/lib/types';
 
@@ -57,45 +62,47 @@ function RoleLanguageCard({
   icon,
   stats,
   accentClass,
+  chipBgClass,
 }: {
   title: string;
   icon: React.ReactNode;
   stats?: ClassroomRoleStats;
   accentClass: string;
+  chipBgClass: string;
 }) {
   const enPct = Number(stats?.en_percent || 0);
   const viPct = Number(stats?.vi_percent || 0);
 
   return (
-    <div className="rounded-2xl border border-white/10 bg-slate-950/60 p-4 space-y-3">
+    <div className="rounded-2xl border border-slate-200 bg-slate-50/75 p-4 space-y-3">
       <div className="flex items-center justify-between gap-2">
         <div className={`flex items-center gap-2 text-sm font-bold ${accentClass}`}>
           {icon}
           <span>{title}</span>
         </div>
-        <span className="rounded-full border border-white/10 bg-white/5 px-2.5 py-0.5 text-xs text-slate-300">
+        <span className={`rounded-full border px-2.5 py-0.5 text-xs font-semibold ${chipBgClass}`}>
           {Number(stats?.turn_count || 0)} lượt
         </span>
       </div>
 
       <div>
         <div className="mb-1.5 flex items-center justify-between text-xs font-semibold">
-          <span className="text-sky-300">Tiếng Anh: {enPct.toFixed(1)}%</span>
-          <span className="text-amber-300">Tiếng Việt: {viPct.toFixed(1)}%</span>
+          <span className="text-sky-600">Tiếng Anh: {enPct.toFixed(1)}%</span>
+          <span className="text-amber-600">Tiếng Việt: {viPct.toFixed(1)}%</span>
         </div>
-        <div className="flex h-3 w-full overflow-hidden rounded-full bg-slate-800">
+        <div className="flex h-3 w-full overflow-hidden rounded-full bg-slate-200">
           <div className="bg-sky-500 transition-all duration-500" style={{ width: `${enPct}%` }} />
-          <div className="bg-amber-500 transition-all duration-500" style={{ width: `${viPct}%` }} />
+          <div className="bg-amber-400 transition-all duration-500" style={{ width: `${viPct}%` }} />
         </div>
       </div>
 
-      <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-400">
+      <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500">
         <span>
-          <strong className="text-sky-300">{stats?.en_words || 0}</strong> từ EN ·{' '}
-          <strong className="text-amber-300">{stats?.vi_words || 0}</strong> từ VI (
+          <strong className="text-sky-700">{stats?.en_words || 0}</strong> từ EN ·{' '}
+          <strong className="text-amber-700">{stats?.vi_words || 0}</strong> từ VI (
           {stats?.total_words || 0} từ)
         </span>
-        <span>Thời lượng nói: {formatDurationReadable(stats?.speech_sec || 0)}</span>
+        <span>Thời lượng: {formatDurationReadable(stats?.speech_sec || 0)}</span>
       </div>
     </div>
   );
@@ -343,22 +350,17 @@ export function ClassroomAnalysisView({
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <h2 className="flex items-center gap-2.5 text-2xl font-bold text-white">
-            <Languages className="h-6 w-6 text-sky-400" />
-            Phân tích Ngôn ngữ Tiết dạy (EN / VI)
-          </h2>
-          <p className="mt-1 text-sm text-slate-400">
-            Nhận diện lời Giáo viên và Học viên từ bản ghi tiết dạy để đo lường tỷ lệ sử dụng Tiếng Anh / Tiếng Việt.
-          </p>
-        </div>
-      </div>
+      <PageHeader
+        eyebrow="PHÂN TÍCH NGÔN NGỮ TIẾT DẠY"
+        title="Đo tỷ lệ Tiếng Anh / Tiếng Việt (EN / VI)"
+        subtitle="Tách lời Giáo viên và Học viên từ bản ghi âm buổi học để thống kê thời lượng nói và tỷ lệ song ngữ."
+        pill={<span>Chuẩn hóa tách giọng lớp học</span>}
+      />
 
       <div className="section-card space-y-5">
         <div className="grid gap-5 lg:grid-cols-2">
           <div>
-            <label className="mb-2 block text-xs font-semibold uppercase tracking-wider text-slate-300">
+            <label className="mb-2 block text-xs font-bold uppercase tracking-wider text-slate-600">
               1. Chọn file ghi âm tiết dạy
             </label>
             <div
@@ -382,28 +384,28 @@ export function ClassroomAnalysisView({
                 className="hidden"
                 onChange={(e) => handleSelectFile(e.target.files?.[0])}
               />
-              <CloudUpload className="mx-auto mb-2 h-9 w-9 text-indigo-400" />
-              <p className="text-sm font-semibold text-white">
+              <CloudUpload className="mx-auto mb-2 h-9 w-9 text-indigo-600" />
+              <p className="text-sm font-bold text-slate-900">
                 Kéo thả hoặc nhấn chọn file âm thanh buổi học
               </p>
-              <p className="mt-1 text-xs text-slate-400">
+              <p className="mt-1 text-xs text-slate-500">
                 Hỗ trợ WAV, MP3, M4A, WEBM (khuyên dùng dưới 300MB)
               </p>
             </div>
 
             {audioFile && audioObjectUrl && (
-              <div className="mt-3 rounded-xl border border-white/10 bg-slate-950/60 p-3.5 space-y-2.5">
+              <div className="mt-3 rounded-2xl border border-slate-200 bg-slate-50/85 p-3.5 space-y-2.5">
                 <div className="flex items-center justify-between gap-2">
                   <div className="min-w-0">
-                    <div className="truncate text-sm font-semibold text-white">{audioFile.name}</div>
-                    <div className="text-xs text-slate-400">
+                    <div className="truncate text-sm font-bold text-slate-900">{audioFile.name}</div>
+                    <div className="text-xs text-slate-500">
                       {(audioFile.size / 1024 / 1024).toFixed(1)} MB
                     </div>
                   </div>
                   <button
                     type="button"
                     onClick={handleClearFile}
-                    className="rounded-lg border border-rose-500/35 bg-rose-500/10 p-1.5 text-rose-300 hover:bg-rose-500/20 transition"
+                    className="rounded-xl border border-rose-200 bg-rose-50 p-2 text-rose-600 hover:bg-rose-100 transition"
                     title="Gỡ file"
                   >
                     <Trash2 className="h-4 w-4" />
@@ -416,14 +418,14 @@ export function ClassroomAnalysisView({
 
           <div className="space-y-4">
             <div>
-              <label className="mb-2 block text-xs font-semibold uppercase tracking-wider text-slate-300">
+              <label className="mb-2 block text-xs font-bold uppercase tracking-wider text-slate-600">
                 2. Mẫu giọng Giáo viên tham chiếu
               </label>
               <select
                 value={effectiveTeacherId}
                 disabled={mode === 'teacher_self'}
                 onChange={(e) => setSelectedTeacherId(e.target.value)}
-                className="w-full rounded-xl border border-white/15 bg-slate-950/75 px-3.5 py-2.5 text-sm text-white focus:border-indigo-500 focus:outline-none disabled:opacity-70"
+                className="w-full rounded-xl border border-slate-200 bg-slate-50/85 px-3.5 py-2.5 text-sm text-slate-900 focus:border-indigo-500 focus:bg-white focus:outline-none disabled:opacity-75"
               >
                 {mode === 'admin' && (
                   <option value="">
@@ -447,12 +449,12 @@ export function ClassroomAnalysisView({
 
               <div className="mt-2.5 text-xs">
                 {!selectedTeacher ? (
-                  <p className="text-slate-400">
+                  <p className="text-slate-500">
                     Hệ thống dùng mẫu giọng của Giáo viên để tách lời Giáo viên; toàn bộ vùng nói còn lại được gán cho Học viên.
                   </p>
                 ) : selectedEmb ? (
-                  <p className="flex items-center gap-1.5 text-emerald-300">
-                    <CheckCircle2 className="h-4 w-4 shrink-0" />
+                  <p className="flex items-center gap-1.5 font-medium text-emerald-700">
+                    <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-600" />
                     <span>
                       {mode === 'teacher_self' ? (
                         <>
@@ -466,8 +468,8 @@ export function ClassroomAnalysisView({
                     </span>
                   </p>
                 ) : (
-                  <div className="flex items-start gap-2 rounded-xl border border-amber-500/35 bg-amber-500/10 p-2.5 text-amber-200">
-                    <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-400" />
+                  <div className="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-amber-800">
+                    <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
                     <span>
                       {mode === 'teacher_self' ? (
                         <>
@@ -476,7 +478,7 @@ export function ClassroomAnalysisView({
                             <button
                               type="button"
                               onClick={onNavigateProfile}
-                              className="font-semibold text-sky-300 underline"
+                              className="font-bold text-indigo-600 underline"
                             >
                               Vào Hồ sơ để thu âm ngay
                             </button>
@@ -495,7 +497,7 @@ export function ClassroomAnalysisView({
               type="button"
               disabled={!canRun}
               onClick={handleRunAnalysis}
-              className="btn-glow inline-flex w-full items-center justify-center gap-2 rounded-xl bg-indigo-600 px-5 py-3 text-sm font-bold text-white shadow-lg shadow-indigo-600/30 hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-45 transition"
+              className="btn-glow inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-indigo-600 px-5 py-3 text-sm font-bold text-white shadow-lg shadow-indigo-600/20 hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-45 transition"
             >
               {running ? (
                 <>
@@ -514,34 +516,87 @@ export function ClassroomAnalysisView({
       </div>
 
       {running && (
-        <div className="section-card flex items-center gap-4 border-indigo-500/30 bg-indigo-500/10">
-          <Loader2 className="h-6 w-6 shrink-0 animate-spin text-indigo-400" />
+        <div className="section-card flex items-center gap-4 border-indigo-200 bg-indigo-50/75">
+          <Loader2 className="h-6 w-6 shrink-0 animate-spin text-indigo-600" />
           <div>
-            <div className="text-sm font-semibold text-white">Đang phân tích bản ghi âm tiết dạy...</div>
-            <div className="text-xs text-slate-300">{loadingStep}</div>
+            <div className="text-sm font-bold text-slate-900">Đang phân tích bản ghi âm tiết dạy...</div>
+            <div className="text-xs text-slate-600">{loadingStep}</div>
           </div>
         </div>
       )}
 
       {result && (
         <div className="space-y-6 animate-slidein">
-          <div className="section-card space-y-5">
-            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 pb-3">
+          <div className="section-card space-y-6">
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 pb-3">
               <div>
-                <h3 className="text-base font-bold text-white">Kết quả Phân tích Ngôn ngữ Tiết dạy</h3>
-                <p className="text-xs text-slate-400">
-                  Giáo viên: <strong className="text-slate-200">{metaInfo?.teacherName}</strong>
+                <h3 className="flex items-center gap-2 text-base font-bold text-slate-900">
+                  <BarChart3 className="h-5 w-5 text-indigo-600" />
+                  Kết quả Phân tích Ngôn ngữ Tiết dạy
+                </h3>
+                <p className="text-xs text-slate-500">
+                  Giáo viên: <strong className="text-slate-900">{metaInfo?.teacherName}</strong>
                 </p>
               </div>
-              <div className="flex flex-wrap gap-2">
-                <button
-                  type="button"
-                  onClick={handleExportCsv}
-                  className="inline-flex items-center gap-1.5 rounded-xl border border-emerald-500/35 bg-emerald-500/15 px-3.5 py-2 text-xs font-semibold text-emerald-300 hover:bg-emerald-500/25 transition"
-                >
-                  <FileSpreadsheet className="h-4 w-4" />
-                  Tải báo cáo Excel
-                </button>
+              <button
+                type="button"
+                onClick={handleExportCsv}
+                className="inline-flex items-center gap-1.5 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-2 text-xs font-bold text-emerald-700 hover:bg-emerald-100 transition"
+              >
+                <FileSpreadsheet className="h-4 w-4" />
+                Tải báo cáo Excel (.csv)
+              </button>
+            </div>
+
+            {/* 3 Donut Analytics Charts (Teacher EN/VI, Student EN/VI, Speech Allocation) */}
+            <div className="grid gap-4 lg:grid-cols-3">
+              <div className="rounded-2xl border border-slate-200 bg-slate-50/65 p-4 space-y-3">
+                <div className="text-xs font-bold uppercase tracking-wider text-indigo-700">
+                  Tỷ lệ ngôn ngữ Giáo viên
+                </div>
+                <RatioDonutChart
+                  size={122}
+                  strokeWidth={14}
+                  centerValue={`${Number(result.teacher?.en_percent || 0).toFixed(0)}%`}
+                  centerLabel="EN"
+                  segments={[
+                    { label: 'Tiếng Anh', value: Number(result.teacher?.en_words || 0), color: '#0EA5E9' },
+                    { label: 'Tiếng Việt', value: Number(result.teacher?.vi_words || 0), color: '#F59E0B' },
+                  ]}
+                />
+              </div>
+
+              <div className="rounded-2xl border border-slate-200 bg-slate-50/65 p-4 space-y-3">
+                <div className="text-xs font-bold uppercase tracking-wider text-emerald-700">
+                  Tỷ lệ ngôn ngữ Học viên
+                </div>
+                <RatioDonutChart
+                  size={122}
+                  strokeWidth={14}
+                  centerValue={`${Number(result.student?.en_percent || 0).toFixed(0)}%`}
+                  centerLabel="EN"
+                  segments={[
+                    { label: 'Tiếng Anh', value: Number(result.student?.en_words || 0), color: '#10B981' },
+                    { label: 'Tiếng Việt', value: Number(result.student?.vi_words || 0), color: '#F43F5E' },
+                  ]}
+                />
+              </div>
+
+              <div className="rounded-2xl border border-slate-200 bg-slate-50/65 p-4 space-y-3">
+                <div className="text-xs font-bold uppercase tracking-wider text-slate-700">
+                  Phân bố thời lượng lớp học
+                </div>
+                <RatioDonutChart
+                  size={122}
+                  strokeWidth={14}
+                  centerValue={`${Number(result.duration?.speech_ratio_percent || 0).toFixed(0)}%`}
+                  centerLabel="Có lời"
+                  segments={[
+                    { label: 'Giáo viên nói', value: Number(result.teacher?.speech_sec || 0), color: '#4F46E5' },
+                    { label: 'Học viên nói', value: Number(result.student?.speech_sec || 0), color: '#10B981' },
+                    { label: 'Khoảng lặng', value: Number(result.duration?.silence_sec || 0), color: '#CBD5E1' },
+                  ]}
+                />
               </div>
             </div>
 
@@ -550,79 +605,87 @@ export function ClassroomAnalysisView({
                 title="Giáo viên"
                 icon={<Presentation className="h-4 w-4" />}
                 stats={result.teacher}
-                accentClass="text-indigo-300"
+                accentClass="text-indigo-700"
+                chipBgClass="border-indigo-200 bg-indigo-50 text-indigo-700"
               />
               <RoleLanguageCard
                 title="Học viên"
                 icon={<GraduationCap className="h-4 w-4" />}
                 stats={result.student}
-                accentClass="text-emerald-300"
+                accentClass="text-emerald-700"
+                chipBgClass="border-emerald-200 bg-emerald-50 text-emerald-700"
               />
             </div>
 
             <div className="grid gap-4 md:grid-cols-2">
-              <div className="rounded-2xl border border-white/10 bg-slate-950/60 p-4 space-y-2.5">
-                <div className="flex items-center justify-between text-xs font-bold uppercase tracking-wider text-slate-300">
+              <div className="rounded-2xl border border-slate-200 bg-slate-50/75 p-4 space-y-2.5">
+                <div className="flex items-center justify-between text-xs font-bold uppercase tracking-wider text-slate-600">
                   <span>Tổng thể toàn tiết học</span>
                   <span>
-                    <span className="text-sky-300">
+                    <span className="text-sky-600">
                       EN {Number(result.overall?.en_percent || 0).toFixed(1)}%
                     </span>{' '}
                     ·{' '}
-                    <span className="text-amber-300">
+                    <span className="text-amber-600">
                       VI {Number(result.overall?.vi_percent || 0).toFixed(1)}%
                     </span>
                   </span>
                 </div>
-                <div className="flex h-3 w-full overflow-hidden rounded-full bg-slate-800">
+                <div className="flex h-3 w-full overflow-hidden rounded-full bg-slate-200">
                   <div
                     className="bg-sky-500"
                     style={{ width: `${Number(result.overall?.en_percent || 0)}%` }}
                   />
                   <div
-                    className="bg-amber-500"
+                    className="bg-amber-400"
                     style={{ width: `${Number(result.overall?.vi_percent || 0)}%` }}
                   />
                 </div>
               </div>
 
-              <div className="rounded-2xl border border-white/10 bg-slate-950/60 p-4">
-                <div className="mb-2 flex items-center justify-between text-xs font-bold uppercase tracking-wider text-slate-300">
+              <div className="rounded-2xl border border-slate-200 bg-slate-50/75 p-4">
+                <div className="mb-2 flex items-center justify-between text-xs font-bold uppercase tracking-wider text-slate-600">
                   <span className="flex items-center gap-1.5">
-                    <Clock className="h-3.5 w-3.5 text-indigo-400" />
-                    Phân bố thời lượng ghi âm
+                    <Clock className="h-3.5 w-3.5 text-indigo-600" />
+                    Thời lượng ghi âm
                   </span>
-                  <span className="rounded-full bg-indigo-500/20 px-2.5 py-0.5 text-indigo-300">
+                  <span className="rounded-full border border-indigo-200 bg-indigo-50 px-2.5 py-0.5 text-indigo-700">
                     {Number(result.duration?.speech_ratio_percent || 0).toFixed(1)}% nói
                   </span>
                 </div>
                 <div className="grid grid-cols-3 gap-2 text-center text-xs">
-                  <div className="rounded-lg bg-slate-900/80 p-2">
-                    <div className="text-slate-400">Tổng file</div>
-                    <div className="font-bold text-white">
+                  <div className="rounded-xl border border-slate-200 bg-white p-2">
+                    <div className="text-slate-500">Tổng file</div>
+                    <div className="font-bold text-slate-900">
                       {formatDurationReadable(result.duration?.total_audio_sec || 0)}
                     </div>
                   </div>
-                  <div className="rounded-lg bg-slate-900/80 p-2">
-                    <div className="text-slate-400">Lời nói</div>
-                    <div className="font-bold text-emerald-300">
+                  <div className="rounded-xl border border-slate-200 bg-white p-2">
+                    <div className="text-slate-500">Lời nói</div>
+                    <div className="font-bold text-emerald-600">
                       {formatDurationReadable(result.duration?.total_speech_sec || 0)}
                     </div>
                   </div>
-                  <div className="rounded-lg bg-slate-900/80 p-2">
-                    <div className="text-slate-400">Im lặng</div>
-                    <div className="font-bold text-slate-300">
+                  <div className="rounded-xl border border-slate-200 bg-white p-2">
+                    <div className="text-slate-500">Im lặng</div>
+                    <div className="font-bold text-slate-700">
                       {formatDurationReadable(result.duration?.silence_sec || 0)}
                     </div>
                   </div>
                 </div>
               </div>
             </div>
+
+            {/* Interactive Timeline Strip */}
+            <ClassroomTimelineStrip
+              segments={result.segments || []}
+              totalAudioSec={Number(result.duration?.total_audio_sec || 0)}
+            />
           </div>
 
           <div className="section-card space-y-4">
             <div className="flex flex-wrap items-center justify-between gap-3">
-              <div className="text-sm font-bold text-white">
+              <div className="text-sm font-bold text-slate-900">
                 Chi tiết từng đoạn thoại ({filteredSegments.length}/{result.segments?.length || 0})
               </div>
               <div className="flex flex-wrap items-center gap-2">
@@ -633,13 +696,13 @@ export function ClassroomAnalysisView({
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
                     placeholder="Tìm nội dung..."
-                    className="rounded-xl border border-white/15 bg-slate-950/70 py-1.5 pl-8 pr-3 text-xs text-white placeholder-slate-500 focus:border-indigo-500 focus:outline-none"
+                    className="rounded-xl border border-slate-200 bg-slate-50/80 py-2 pl-8 pr-3 text-xs text-slate-900 placeholder-slate-400 focus:border-indigo-500 focus:bg-white focus:outline-none"
                   />
                 </div>
                 <select
                   value={roleFilter}
                   onChange={(e) => setRoleFilter(e.target.value)}
-                  className="rounded-xl border border-white/15 bg-slate-950/70 px-3 py-1.5 text-xs text-white focus:border-indigo-500 focus:outline-none"
+                  className="rounded-xl border border-slate-200 bg-slate-50/80 px-3 py-2 text-xs text-slate-900 focus:border-indigo-500 focus:bg-white focus:outline-none"
                 >
                   <option value="">Tất cả vai trò</option>
                   <option value="teacher">Chỉ Giáo viên</option>
@@ -648,7 +711,7 @@ export function ClassroomAnalysisView({
                 <select
                   value={langFilter}
                   onChange={(e) => setLangFilter(e.target.value)}
-                  className="rounded-xl border border-white/15 bg-slate-950/70 px-3 py-1.5 text-xs text-white focus:border-indigo-500 focus:outline-none"
+                  className="rounded-xl border border-slate-200 bg-slate-50/80 px-3 py-2 text-xs text-slate-900 focus:border-indigo-500 focus:bg-white focus:outline-none"
                 >
                   <option value="">Mọi ngôn ngữ</option>
                   <option value="only_en">100% Tiếng Anh</option>
@@ -657,18 +720,19 @@ export function ClassroomAnalysisView({
               </div>
             </div>
 
-            <div className="overflow-x-auto rounded-xl border border-white/10">
-              <table className="min-w-full divide-y divide-white/10 text-left text-xs">
-                <thead className="bg-slate-950/80 text-slate-400">
+            {/* DESKTOP TABLE (md+) */}
+            <div className="hidden md:block overflow-x-auto rounded-2xl border border-slate-200">
+              <table className="min-w-full divide-y divide-slate-200 text-left text-xs">
+                <thead className="bg-slate-50 text-slate-500">
                   <tr>
-                    <th className="px-3 py-2.5">#</th>
-                    <th className="px-3 py-2.5">Thời gian</th>
-                    <th className="px-3 py-2.5">Người nói</th>
-                    <th className="px-3 py-2.5 min-w-[160px]">Tỷ lệ EN / VI</th>
-                    <th className="px-3 py-2.5">Nội dung nói</th>
+                    <th className="px-3.5 py-2.5 font-semibold">#</th>
+                    <th className="px-3.5 py-2.5 font-semibold">Thời gian</th>
+                    <th className="px-3.5 py-2.5 font-semibold">Người nói</th>
+                    <th className="px-3.5 py-2.5 font-semibold min-w-[160px]">Tỷ lệ EN / VI</th>
+                    <th className="px-3.5 py-2.5 font-semibold">Nội dung nói</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-white/10 bg-slate-900/40">
+                <tbody className="divide-y divide-slate-100 bg-white">
                   {filteredSegments.length === 0 ? (
                     <tr>
                       <td colSpan={5} className="px-4 py-8 text-center text-slate-400">
@@ -679,41 +743,41 @@ export function ClassroomAnalysisView({
                     filteredSegments.map((seg) => {
                       const isTeacher = seg.role === 'teacher';
                       return (
-                        <tr key={seg.index} className="hover:bg-white/[0.03]">
-                          <td className="px-3 py-2.5 text-slate-400">{Number(seg.index) + 1}</td>
-                          <td className="px-3 py-2.5">
-                            <div className="font-mono text-slate-200">
+                        <tr key={seg.index} className="hover:bg-slate-50/75">
+                          <td className="px-3.5 py-2.5 text-slate-500 font-medium">{Number(seg.index) + 1}</td>
+                          <td className="px-3.5 py-2.5">
+                            <div className="font-mono text-slate-800">
                               {formatTimestamp(seg.start_sec)} – {formatTimestamp(seg.end_sec)}
                             </div>
-                            <div className="text-[11px] text-slate-500">
+                            <div className="text-[11px] text-slate-400">
                               {Number(seg.duration_sec || 0).toFixed(1)}s
                             </div>
                           </td>
-                          <td className="px-3 py-2.5">
+                          <td className="px-3.5 py-2.5">
                             {isTeacher ? (
-                              <span className="inline-flex items-center gap-1 rounded-md border border-indigo-500/35 bg-indigo-500/15 px-2 py-0.5 text-indigo-300 font-medium">
+                              <span className="inline-flex items-center gap-1 rounded-full border border-indigo-200 bg-indigo-50 px-2.5 py-0.5 text-indigo-700 font-semibold">
                                 <Presentation className="h-3 w-3" />
                                 Giáo viên
                               </span>
                             ) : (
-                              <span className="inline-flex items-center gap-1 rounded-md border border-emerald-500/35 bg-emerald-500/15 px-2 py-0.5 text-emerald-300 font-medium">
+                              <span className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-0.5 text-emerald-700 font-semibold">
                                 <Mic className="h-3 w-3" />
                                 Học viên
                               </span>
                             )}
                           </td>
-                          <td className="px-3 py-2.5">
+                          <td className="px-3.5 py-2.5">
                             <div className="mb-1 flex justify-between text-[11px] font-semibold">
-                              <span className="text-sky-300">
-                                EN {Number(seg.en_percent || 0).toFixed(1)}% ({seg.en_words || 0})
+                              <span className="text-sky-600">
+                                EN {Number(seg.en_percent || 0).toFixed(0)}% ({seg.en_words || 0})
                               </span>
-                              <span className="text-amber-300">
-                                VI {Number(seg.vi_percent || 0).toFixed(1)}% ({seg.vi_words || 0})
+                              <span className="text-amber-600">
+                                VI {Number(seg.vi_percent || 0).toFixed(0)}% ({seg.vi_words || 0})
                               </span>
                             </div>
-                            <div className="flex h-1.5 w-full overflow-hidden rounded-full bg-slate-800">
+                            <div className="flex h-1.5 w-full overflow-hidden rounded-full bg-slate-100">
                               <div
-                                className="bg-sky-400"
+                                className="bg-sky-500"
                                 style={{ width: `${Number(seg.en_percent || 0)}%` }}
                               />
                               <div
@@ -722,7 +786,7 @@ export function ClassroomAnalysisView({
                               />
                             </div>
                           </td>
-                          <td className="px-3 py-2.5 text-slate-200 leading-relaxed">
+                          <td className="px-3.5 py-2.5 text-slate-800 leading-relaxed">
                             {seg.transcript}
                           </td>
                         </tr>
@@ -732,10 +796,60 @@ export function ClassroomAnalysisView({
                 </tbody>
               </table>
             </div>
+
+            {/* MOBILE SEGMENT CARDS (< md) */}
+            <div className="space-y-2.5 md:hidden">
+              {filteredSegments.length === 0 ? (
+                <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-6 text-center text-xs text-slate-400">
+                  Không có vùng nói nào khớp bộ lọc hiện tại.
+                </div>
+              ) : (
+                filteredSegments.map((seg) => {
+                  const isTeacher = seg.role === 'teacher';
+                  return (
+                    <div
+                      key={seg.index}
+                      className="rounded-2xl border border-slate-200 bg-slate-50/60 p-3.5 space-y-2"
+                    >
+                      <div className="flex items-center justify-between gap-2 text-xs">
+                        <div className="flex items-center gap-2">
+                          <span className="font-mono text-[11px] font-semibold text-slate-500">
+                            #{Number(seg.index) + 1} · {formatTimestamp(seg.start_sec)} – {formatTimestamp(seg.end_sec)}
+                          </span>
+                        </div>
+                        {isTeacher ? (
+                          <span className="inline-flex items-center gap-1 rounded-full border border-indigo-200 bg-indigo-50 px-2 py-0.5 text-[11px] font-semibold text-indigo-700">
+                            <Presentation className="h-3 w-3" />
+                            Giáo viên
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-700">
+                            <Mic className="h-3 w-3" />
+                            Học viên
+                          </span>
+                        )}
+                      </div>
+
+                      <p className="text-sm leading-relaxed text-slate-800">{seg.transcript}</p>
+
+                      <div className="space-y-1 pt-1">
+                        <div className="flex justify-between text-[11px] font-semibold">
+                          <span className="text-sky-600">EN {Number(seg.en_percent || 0).toFixed(0)}%</span>
+                          <span className="text-amber-600">VI {Number(seg.vi_percent || 0).toFixed(0)}%</span>
+                        </div>
+                        <div className="flex h-1.5 w-full overflow-hidden rounded-full bg-slate-200">
+                          <div className="bg-sky-500" style={{ width: `${Number(seg.en_percent || 0)}%` }} />
+                          <div className="bg-amber-400" style={{ width: `${Number(seg.vi_percent || 0)}%` }} />
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
           </div>
         </div>
       )}
     </div>
   );
 }
-

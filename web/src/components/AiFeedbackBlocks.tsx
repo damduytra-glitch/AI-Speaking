@@ -22,13 +22,13 @@ import type { AiEvalResult, DialogueTurn, WordDetailItem } from '@/lib/types';
 function SafeSummaryLines({ text }: { text: string }) {
   const lines = String(text || '').split('\n');
   return (
-    <div className="space-y-1.5 text-sm leading-relaxed text-slate-200">
+    <div className="space-y-1.5 text-sm leading-relaxed text-slate-700">
       {lines.map((raw, idx) => {
         const trimmed = raw.trim();
         if (!trimmed) return null;
         if (trimmed.startsWith('## ')) {
           return (
-            <h6 key={idx} className="pt-1 font-bold text-white">
+            <h6 key={idx} className="pt-1 font-bold text-slate-900">
               {trimmed.slice(3)}
             </h6>
           );
@@ -72,22 +72,22 @@ export function ComprehensiveAiFeedback({ aiEval, otf, scores }: ComprehensiveAi
 
   return (
     <div className="space-y-4">
-      <div className="rounded-xl border border-white/10 bg-slate-950/60 p-4">
-        <div className="mb-3 flex flex-wrap items-center justify-between gap-2 border-b border-white/10 pb-2.5">
+      <div className="rounded-2xl border border-slate-200 bg-slate-50/75 p-4">
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2 border-b border-slate-200/80 pb-2.5">
           <div className="flex flex-wrap items-center gap-2">
-            <Award className="h-5 w-5 text-amber-400" />
-            <span className="font-bold text-white">Nhận Xét Cuộc Hội Thoại</span>
+            <Award className="h-5 w-5 text-amber-500" />
+            <span className="font-bold text-slate-900">Nhận Xét Cuộc Hội Thoại</span>
             <span className={`rounded-full border px-2.5 py-0.5 text-xs font-semibold ${bandInfo.badgeClass}`}>
               {bandInfo.band} · {bandInfo.level}
             </span>
           </div>
           {hasAi && !isFallback ? (
-            <span className="inline-flex items-center gap-1 rounded-full border border-indigo-500/35 bg-indigo-500/15 px-2.5 py-0.5 text-xs font-medium text-indigo-300">
+            <span className="inline-flex items-center gap-1 rounded-full border border-indigo-200 bg-indigo-50 px-2.5 py-0.5 text-xs font-semibold text-indigo-700">
               <Sparkles className="h-3.5 w-3.5" />
               Đánh giá AI
             </span>
           ) : (
-            <span className="inline-flex items-center gap-1 rounded-full border border-white/15 bg-white/5 px-2.5 py-0.5 text-xs font-medium text-slate-300">
+            <span className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-white px-2.5 py-0.5 text-xs font-medium text-slate-600">
               <Cpu className="h-3.5 w-3.5" />
               Đánh giá tự động
             </span>
@@ -103,39 +103,39 @@ export function ComprehensiveAiFeedback({ aiEval, otf, scores }: ComprehensiveAi
       </div>
 
       <div>
-        <div className="mb-2 text-xs font-semibold uppercase tracking-wider text-slate-400">
+        <div className="mb-2 text-xs font-bold uppercase tracking-wider text-slate-500">
           Chi tiết 4 tiêu chí đánh giá
         </div>
         <div className="grid grid-cols-2 gap-2.5 md:grid-cols-4">
-          <div className="rounded-xl border border-white/10 bg-slate-950/70 p-3 text-center">
-            <div className="text-xl font-bold text-emerald-400">{prScore}</div>
-            <div className="mt-1 text-xs font-semibold text-white">Phát Âm &amp; Ngữ Điệu</div>
-            <div className="text-[11px] text-slate-400">Độ chuẩn âm &amp; trôi chảy</div>
+          <div className="rounded-2xl border border-emerald-100 bg-emerald-50/60 p-3 text-center">
+            <div className="text-xl font-extrabold text-emerald-600 tabular-nums">{prScore}</div>
+            <div className="mt-1 text-xs font-bold text-slate-900">Phát Âm &amp; Ngữ Điệu</div>
+            <div className="text-[11px] text-slate-500">Độ chuẩn âm &amp; trôi chảy</div>
           </div>
 
-          <div className="rounded-xl border border-white/10 bg-slate-950/70 p-3 text-center">
-            <div className="text-xl font-bold text-sky-400">{fcScore}</div>
-            <div className="mt-1 text-xs font-semibold text-white">Mạch Lạc &amp; Tương Tác</div>
-            <div className="text-[11px] text-slate-400">Phản xạ &amp; Mở rộng ý</div>
+          <div className="rounded-2xl border border-sky-100 bg-sky-50/60 p-3 text-center">
+            <div className="text-xl font-extrabold text-sky-600 tabular-nums">{fcScore}</div>
+            <div className="mt-1 text-xs font-bold text-slate-900">Mạch Lạc &amp; Tương Tác</div>
+            <div className="text-[11px] text-slate-500">Phản xạ &amp; Mở rộng ý</div>
           </div>
 
-          <div className="rounded-xl border border-white/10 bg-slate-950/70 p-3 text-center">
-            <div className="text-xl font-bold text-amber-400">{lrScore}</div>
-            <div className="mt-1 text-xs font-semibold text-white">Vốn Từ Vựng</div>
-            <div className="text-[11px] text-slate-400">Đa dạng &amp; Tự nhiên</div>
+          <div className="rounded-2xl border border-amber-100 bg-amber-50/60 p-3 text-center">
+            <div className="text-xl font-extrabold text-amber-600 tabular-nums">{lrScore}</div>
+            <div className="mt-1 text-xs font-bold text-slate-900">Vốn Từ Vựng</div>
+            <div className="text-[11px] text-slate-500">Đa dạng &amp; Tự nhiên</div>
           </div>
 
-          <div className="rounded-xl border border-white/10 bg-slate-950/70 p-3 text-center">
-            <div className="text-xl font-bold text-indigo-400">{graScore}</div>
-            <div className="mt-1 text-xs font-semibold text-white">Ngữ Pháp &amp; Cấu Trúc</div>
-            <div className="text-[11px] text-slate-400">Chính xác &amp; Đa dạng</div>
+          <div className="rounded-2xl border border-indigo-100 bg-indigo-50/60 p-3 text-center">
+            <div className="text-xl font-extrabold text-indigo-600 tabular-nums">{graScore}</div>
+            <div className="mt-1 text-xs font-bold text-slate-900">Ngữ Pháp &amp; Cấu Trúc</div>
+            <div className="text-[11px] text-slate-500">Chính xác &amp; Đa dạng</div>
           </div>
         </div>
       </div>
 
       {grammarErrors.length > 0 ? (
         <div className="space-y-2">
-          <div className="flex items-center gap-1.5 text-xs font-semibold text-amber-300">
+          <div className="flex items-center gap-1.5 text-xs font-bold text-amber-700">
             <AlertTriangle className="h-4 w-4" />
             <span>Các điểm ngữ pháp &amp; cấu trúc cần sửa ({grammarErrors.length}):</span>
           </div>
@@ -143,25 +143,25 @@ export function ComprehensiveAiFeedback({ aiEval, otf, scores }: ComprehensiveAi
             {grammarErrors.map((ge, idx) => (
               <div
                 key={idx}
-                className="rounded-xl border border-white/10 bg-slate-950/70 p-3 text-xs space-y-1.5"
+                className="rounded-2xl border border-slate-200 bg-white p-3.5 text-xs space-y-1.5 shadow-sm"
               >
                 <div className="flex flex-wrap items-center gap-2">
-                  <span className="rounded border border-rose-500/35 bg-rose-500/15 px-2 py-0.5 font-semibold text-rose-300">
+                  <span className="rounded-md border border-rose-200 bg-rose-50 px-2 py-0.5 font-semibold text-rose-700">
                     {ge.turn_index ? `Lượt ${ge.turn_index}` : `Lỗi ${idx + 1}`}
                   </span>
-                  <span className="font-mono text-rose-300 line-through">
+                  <span className="font-mono text-rose-600 line-through">
                     &ldquo;{ge.error_text}&rdquo;
                   </span>
                   <ArrowRight className="h-3.5 w-3.5 text-slate-400" />
-                  <span className="rounded border border-emerald-500/35 bg-emerald-500/15 px-2 py-0.5 font-semibold text-emerald-300">
+                  <span className="rounded-md border border-emerald-200 bg-emerald-50 px-2 py-0.5 font-semibold text-emerald-700">
                     Sửa chuẩn
                   </span>
-                  <span className="font-mono font-bold text-emerald-300">
+                  <span className="font-mono font-bold text-emerald-700">
                     &ldquo;{ge.fix}&rdquo;
                   </span>
                 </div>
                 {ge.explanation && (
-                  <div className="border-l-2 border-amber-400/70 pl-2.5 text-slate-300">
+                  <div className="border-l-2 border-amber-400 pl-2.5 text-slate-600">
                     {ge.explanation}
                   </div>
                 )}
@@ -170,8 +170,8 @@ export function ComprehensiveAiFeedback({ aiEval, otf, scores }: ComprehensiveAi
           </div>
         </div>
       ) : hasAi ? (
-        <div className="flex items-center gap-2 rounded-xl border border-emerald-500/25 bg-emerald-500/10 px-3.5 py-2.5 text-xs text-emerald-300">
-          <CheckCircle2 className="h-4 w-4 shrink-0" />
+        <div className="flex items-center gap-2 rounded-2xl border border-emerald-200 bg-emerald-50 px-3.5 py-2.5 text-xs text-emerald-800">
+          <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-600" />
           <span>
             <strong>Ngữ pháp đạt chuẩn:</strong> Học viên kiểm soát cấu trúc ngữ pháp tốt trong các lượt nói.
           </span>
@@ -180,14 +180,14 @@ export function ComprehensiveAiFeedback({ aiEval, otf, scores }: ComprehensiveAi
 
       {otfTips.length > 0 && (
         <div className="clean-feedback-box">
-          <div className="mb-1.5 flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-amber-300">
+          <div className="mb-1.5 flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-amber-800">
             <Waves className="h-4 w-4" />
             Gợi ý cải thiện phát âm
           </div>
-          <ul className="space-y-1 text-xs text-slate-200">
+          <ul className="space-y-1 text-xs text-slate-700">
             {otfTips.map((tip, idx) => (
               <li key={idx} className="flex items-start gap-2">
-                <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-amber-400" />
+                <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-amber-500" />
                 <span>{tip}</span>
               </li>
             ))}
@@ -196,8 +196,8 @@ export function ComprehensiveAiFeedback({ aiEval, otf, scores }: ComprehensiveAi
       )}
 
       {expressions.length > 0 && (
-        <div className="rounded-xl border border-white/10 bg-slate-950/70 p-3.5">
-          <div className="mb-2 flex items-center gap-1.5 text-xs font-semibold text-emerald-300">
+        <div className="rounded-2xl border border-emerald-200 bg-emerald-50/60 p-3.5">
+          <div className="mb-2 flex items-center gap-1.5 text-xs font-bold text-emerald-800">
             <MessageSquareQuote className="h-4 w-4" />
             Cách diễn đạt mẫu tự nhiên hơn
           </div>
@@ -205,7 +205,7 @@ export function ComprehensiveAiFeedback({ aiEval, otf, scores }: ComprehensiveAi
             {expressions.map((exp, idx) => (
               <div
                 key={idx}
-                className="border-l-2 border-emerald-500/70 pl-3 text-xs italic text-slate-200"
+                className="border-l-2 border-emerald-500 pl-3 text-xs italic text-slate-700"
               >
                 &ldquo;{exp}&rdquo;
               </div>
@@ -215,12 +215,12 @@ export function ComprehensiveAiFeedback({ aiEval, otf, scores }: ComprehensiveAi
       )}
 
       {commTips.length > 0 && (
-        <div className="rounded-xl border border-white/10 bg-slate-950/50 p-3.5">
-          <div className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold text-sky-300">
+        <div className="rounded-2xl border border-sky-200 bg-sky-50/65 p-3.5">
+          <div className="mb-1.5 flex items-center gap-1.5 text-xs font-bold text-sky-800">
             <Lightbulb className="h-4 w-4" />
             Lời khuyên giao tiếp &amp; phản xạ tự nhiên
           </div>
-          <ul className="list-disc space-y-1 pl-5 text-xs text-slate-300">
+          <ul className="list-disc space-y-1 pl-5 text-xs text-slate-700">
             {commTips.map((tip, idx) => (
               <li key={idx}>{tip}</li>
             ))}
@@ -234,7 +234,7 @@ export function ComprehensiveAiFeedback({ aiEval, otf, scores }: ComprehensiveAi
 export function DialogueTimeline({ turns }: { turns: DialogueTurn[] }) {
   if (!turns || turns.length === 0) {
     return (
-      <div className="rounded-xl border border-white/10 bg-white/[0.02] p-6 text-center text-sm text-slate-400">
+      <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50/70 p-6 text-center text-sm text-slate-500">
         Không có dữ liệu chi tiết từng lượt hội thoại.
       </div>
     );
@@ -291,50 +291,50 @@ export function DialogueTimeline({ turns }: { turns: DialogueTurn[] }) {
                 .map((w) => ({ word: w, status: 'good' }));
 
         return (
-          <div key={idx} className="flex items-start gap-3">
+          <div key={idx} className="flex items-start gap-2.5 sm:gap-3">
             {isTeacher && (
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border-2 border-indigo-500 bg-slate-900 text-indigo-400">
+              <div className="hidden sm:flex h-10 w-10 shrink-0 items-center justify-center rounded-full border-2 border-indigo-200 bg-indigo-50 text-indigo-600">
                 <Presentation className="h-4 w-4" />
               </div>
             )}
 
             <div
-              className={`speech-bubble-enhanced flex-1 ${
+              className={`speech-bubble-enhanced flex-1 min-w-0 ${
                 isTeacher ? 'teacher-bubble-enhanced' : 'student-bubble-enhanced'
               }`}
             >
               <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-                <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-300">
+                <div className="flex items-center gap-1.5 text-xs font-bold text-slate-700">
                   {isTeacher ? (
                     <>
-                      <Presentation className="h-3.5 w-3.5 text-indigo-400" />
+                      <Presentation className="h-3.5 w-3.5 text-indigo-600" />
                       <span>Giáo viên</span>
                     </>
                   ) : (
                     <>
-                      <GraduationCap className="h-3.5 w-3.5 text-sky-400" />
+                      <GraduationCap className="h-3.5 w-3.5 text-sky-600" />
                       <span>Học viên</span>
                     </>
                   )}
                 </div>
 
                 {hasScores && sc ? (
-                  <div className="flex flex-wrap items-center gap-1.5 text-xs">
-                    <span className="rounded-full bg-gradient-to-r from-indigo-600 to-sky-500 px-2.5 py-0.5 font-bold text-white shadow">
+                  <div className="flex flex-wrap items-center gap-1.5 text-[11px]">
+                    <span className="rounded-full bg-gradient-to-r from-indigo-600 to-sky-500 px-2.5 py-0.5 font-bold text-white shadow-sm">
                       Tổng: {(sc.total || 0).toFixed(1)}
                     </span>
-                    <span className="rounded-lg border border-white/10 bg-white/5 px-2 py-0.5 text-slate-300">
+                    <span className="rounded-lg border border-slate-200 bg-slate-50 px-2 py-0.5 text-slate-600 font-medium">
                       Phát âm: {(sc.accuracy || 0).toFixed(1)}
                     </span>
-                    <span className="rounded-lg border border-white/10 bg-white/5 px-2 py-0.5 text-slate-300">
+                    <span className="rounded-lg border border-slate-200 bg-slate-50 px-2 py-0.5 text-slate-600 font-medium">
                       Trôi chảy: {(sc.fluency || 0).toFixed(1)}
                     </span>
-                    <span className="rounded-lg border border-white/10 bg-white/5 px-2 py-0.5 text-slate-300">
+                    <span className="rounded-lg border border-slate-200 bg-slate-50 px-2 py-0.5 text-slate-600 font-medium">
                       Ngữ điệu: {(sc.prosodic || 0).toFixed(1)}
                     </span>
                   </div>
                 ) : (
-                  <span className="rounded-full border border-white/10 bg-white/5 px-2.5 py-0.5 text-[11px] text-slate-400">
+                  <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-0.5 text-[11px] font-medium text-slate-500">
                     {turn.eligibility_reason === 'short_backchannel'
                       ? 'Từ đệm (Không chấm)'
                       : turn.eligibility_reason === 'too_short'
@@ -345,7 +345,7 @@ export function DialogueTimeline({ turns }: { turns: DialogueTurn[] }) {
               </div>
 
               {isTeacher && !turn.scored ? (
-                <p className="py-1 text-sm text-slate-100">{turn.transcript}</p>
+                <p className="py-1 text-sm text-slate-800">{turn.transcript}</p>
               ) : (
                 <div className="word-token-stream">
                   {words.map((w, wIdx) => {
@@ -367,22 +367,22 @@ export function DialogueTimeline({ turns }: { turns: DialogueTurn[] }) {
 
               {feedbackItems.length > 0 && (
                 <div className="clean-feedback-box mt-2.5">
-                  <div className="mb-1.5 flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-amber-300">
+                  <div className="mb-1.5 flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-amber-800">
                     <Waves className="h-3.5 w-3.5" />
                     Gợi ý sửa phát âm
                   </div>
-                  <div className="space-y-1 text-xs text-slate-200">
+                  <div className="space-y-1 text-xs text-slate-700">
                     {feedbackItems.map((fi, fIdx) => (
                       <div key={fIdx} className="flex flex-wrap items-center gap-1.5">
-                        <AlertCircle className="h-3.5 w-3.5 shrink-0 text-amber-400" />
-                        <span className="font-bold text-white">{fi.contrast}</span>
+                        <AlertCircle className="h-3.5 w-3.5 shrink-0 text-amber-600" />
+                        <span className="font-bold text-slate-900">{fi.contrast}</span>
                         {fi.word && (
                           <span>
                             trong <strong>&ldquo;{fi.word}&rdquo;</strong>
                           </span>
                         )}
                         {fi.ruleName && <span className="rule-tag">{fi.ruleName}</span>}
-                        {fi.tipText && <span className="italic text-slate-300">— {fi.tipText}</span>}
+                        {fi.tipText && <span className="italic text-slate-600">— {fi.tipText}</span>}
                       </div>
                     ))}
                   </div>
@@ -390,15 +390,15 @@ export function DialogueTimeline({ turns }: { turns: DialogueTurn[] }) {
               )}
 
               {turn.audio && (
-                <div className="mt-2.5 flex items-center gap-2 rounded-xl border border-white/10 bg-slate-950/60 px-3 py-1.5">
-                  <Volume2 className="h-4 w-4 shrink-0 text-sky-400" />
+                <div className="mt-2.5 flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-1.5">
+                  <Volume2 className="h-4 w-4 shrink-0 text-sky-600" />
                   <audio controls src={turn.audio} className="h-8 w-full" />
                 </div>
               )}
             </div>
 
             {!isTeacher && (
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border-2 border-sky-500 bg-slate-900 text-sky-400">
+              <div className="hidden sm:flex h-10 w-10 shrink-0 items-center justify-center rounded-full border-2 border-sky-200 bg-sky-50 text-sky-600">
                 <GraduationCap className="h-4 w-4" />
               </div>
             )}
@@ -408,4 +408,3 @@ export function DialogueTimeline({ turns }: { turns: DialogueTurn[] }) {
     </div>
   );
 }
-

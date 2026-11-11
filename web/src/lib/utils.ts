@@ -51,41 +51,41 @@ export function getIeltsBandLabel(score?: number | null): {
     return {
       band: 'IELTS 8.5 - 9.0',
       level: 'C2 Xuất sắc',
-      badgeClass: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40',
+      badgeClass: 'bg-emerald-50 text-emerald-700 border-emerald-200',
     };
   }
   if (s >= 7.5) {
     return {
       band: 'IELTS 7.5 - 8.0',
       level: 'C1 Rất tốt',
-      badgeClass: 'bg-indigo-500/20 text-indigo-300 border-indigo-500/40',
+      badgeClass: 'bg-indigo-50 text-indigo-700 border-indigo-200',
     };
   }
   if (s >= 6.5) {
     return {
       band: 'IELTS 6.5 - 7.0',
       level: 'B2 Khá',
-      badgeClass: 'bg-sky-500/20 text-sky-300 border-sky-500/40',
+      badgeClass: 'bg-sky-50 text-sky-700 border-sky-200',
     };
   }
   if (s >= 5.0) {
     return {
       band: 'IELTS 5.0 - 6.0',
       level: 'B1 Trung bình',
-      badgeClass: 'bg-amber-500/20 text-amber-300 border-amber-500/40',
+      badgeClass: 'bg-amber-50 text-amber-700 border-amber-200',
     };
   }
   if (s >= 3.5) {
     return {
       band: 'IELTS 3.5 - 4.5',
       level: 'A2 Giới hạn',
-      badgeClass: 'bg-rose-500/20 text-rose-300 border-rose-500/40',
+      badgeClass: 'bg-rose-50 text-rose-700 border-rose-200',
     };
   }
   return {
     band: 'IELTS 1.0 - 3.0',
     level: 'A1 Cần cải thiện',
-    badgeClass: 'bg-rose-500/20 text-rose-300 border-rose-500/40',
+    badgeClass: 'bg-rose-50 text-rose-700 border-rose-200',
   };
 }
 
@@ -110,17 +110,17 @@ export function formatScoreValue(val?: number | null): string {
 
 export function scoreTextColorClass(val?: number | null): string {
   const n = Number(val) || 0;
-  if (n >= 8) return 'text-emerald-400';
-  if (n >= 6) return 'text-sky-400';
-  if (n >= 4) return 'text-amber-400';
-  return 'text-rose-400';
+  if (n >= 8) return 'text-emerald-600';
+  if (n >= 6) return 'text-sky-600';
+  if (n >= 4) return 'text-amber-600';
+  return 'text-rose-600';
 }
 
 export function scoreBadgeBgClass(val?: number | null): string {
   const n = Number(val) || 0;
-  if (n >= 8) return 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30';
-  if (n >= 6) return 'bg-amber-500/20 text-amber-300 border-amber-500/30';
-  return 'bg-rose-500/20 text-rose-300 border-rose-500/30';
+  if (n >= 8) return 'bg-emerald-50 text-emerald-700 border-emerald-200';
+  if (n >= 6) return 'bg-amber-50 text-amber-700 border-amber-200';
+  return 'bg-rose-50 text-rose-700 border-rose-200';
 }
 
 export function formatDurationReadable(sec?: number | null): string {

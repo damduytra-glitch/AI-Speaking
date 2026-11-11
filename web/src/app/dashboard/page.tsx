@@ -78,6 +78,9 @@ export default function DashboardPage() {
       setPracticeGuardActive(false);
     }
     setActiveTab(tabId);
+    if (typeof window !== 'undefined') {
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
   };
 
   const handleRecheckStatus = async () => {
@@ -110,12 +113,13 @@ export default function DashboardPage() {
 
   if (bootstrapping) {
     return (
-      <div className="relative flex min-h-screen items-center justify-center overflow-hidden px-4">
-        <div className="bg-blob top-[-120px] left-[-120px] h-[420px] w-[420px] bg-indigo-600/35" />
-        <div className="bg-blob bottom-[-120px] right-[-120px] h-[420px] w-[420px] bg-sky-500/25" />
-        <div className="glass-card flex flex-col items-center gap-3 p-8 text-center">
-          <Loader2 className="h-8 w-8 animate-spin text-indigo-400" />
-          <p className="text-sm text-slate-300">Đang khởi tạo không gian làm việc...</p>
+      <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-[#F8FAFC] px-4">
+        <div className="bg-blob bg-blob-1" />
+        <div className="bg-blob bg-blob-2" />
+        <div className="bg-blob bg-blob-3" />
+        <div className="glass-card relative z-10 flex flex-col items-center gap-3 p-8 text-center">
+          <Loader2 className="h-8 w-8 animate-spin text-indigo-600" />
+          <p className="text-sm font-medium text-slate-600">Đang khởi tạo không gian làm việc...</p>
         </div>
       </div>
     );
@@ -123,18 +127,20 @@ export default function DashboardPage() {
 
   if (bootstrapError || !profile) {
     return (
-      <div className="relative flex min-h-screen items-center justify-center overflow-hidden px-4">
-        <div className="section-card max-w-md space-y-4 text-center p-8">
-          <AlertTriangle className="mx-auto h-10 w-10 text-amber-400" />
-          <h2 className="text-lg font-bold text-white">Không thể vào Dashboard</h2>
-          <p className="text-sm text-slate-300">
+      <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-[#F8FAFC] px-4">
+        <div className="bg-blob bg-blob-1" />
+        <div className="bg-blob bg-blob-2" />
+        <div className="section-card relative z-10 max-w-md space-y-4 text-center p-8">
+          <AlertTriangle className="mx-auto h-10 w-10 text-amber-500" />
+          <h2 className="text-lg font-bold text-slate-900">Không thể vào Dashboard</h2>
+          <p className="text-sm text-slate-600">
             {bootstrapError || 'Phiên đăng nhập không hợp lệ hoặc thiếu hồ sơ người dùng.'}
           </p>
           <div className="flex justify-center gap-3 pt-2">
             <button
               type="button"
               onClick={handleLogout}
-              className="rounded-xl bg-indigo-600 px-5 py-2 text-xs font-semibold text-white hover:bg-indigo-500"
+              className="rounded-2xl bg-indigo-600 px-5 py-2.5 text-xs font-semibold text-white shadow-md shadow-indigo-600/20 hover:bg-indigo-500"
             >
               Về trang Đăng nhập
             </button>
@@ -148,9 +154,10 @@ export default function DashboardPage() {
   const navItems = getNavItemsForRole(profile.role, isActive, pendingTeacherCount);
 
   return (
-    <div className="relative min-h-screen overflow-x-hidden">
-      <div className="bg-blob top-[-140px] left-[20%] h-[420px] w-[420px] bg-indigo-600/25" />
-      <div className="bg-blob bottom-[-140px] right-[-100px] h-[420px] w-[420px] bg-sky-500/20" />
+    <div className="relative min-h-screen overflow-x-clip bg-[#F8FAFC]">
+      <div className="bg-blob bg-blob-1" />
+      <div className="bg-blob bg-blob-2" />
+      <div className="bg-blob bg-blob-3" />
 
       <DashboardSidebar
         profile={profile}
@@ -160,8 +167,11 @@ export default function DashboardPage() {
         onLogout={handleLogout}
       />
 
-      <main className="relative z-10 min-h-screen lg:pl-72">
-        <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
+      <main className="relative min-h-screen pb-24 lg:pb-10 lg:pl-[19rem]">
+        <div
+          key={`${profile.role}-${isActive ? '1' : '0'}-${activeTab}`}
+          className="animate-tab-in mx-auto max-w-7xl px-4 py-5 sm:px-6 lg:px-8 lg:py-7"
+        >
           {!isActive ? (
             activeTab === 'profile' ? (
               <ProfileView
@@ -213,4 +223,3 @@ export default function DashboardPage() {
     </div>
   );
 }
-

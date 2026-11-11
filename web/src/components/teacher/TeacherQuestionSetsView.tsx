@@ -3,7 +3,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ArrowLeft,
-  BookOpen,
   CheckCircle2,
   Clock,
   Copy,
@@ -35,8 +34,9 @@ import {
   updateQuestion,
   updateQuestionSet,
 } from '@/lib/questionSets';
-import { formatScoreValue, getExamTypeName, getLevelLabel } from '@/lib/utils';
+import { formatScoreValue, getExamTypeName, getLevelLabel, scoreBadgeBgClass } from '@/lib/utils';
 import { Modal } from '@/components/ui/Modal';
+import { PageHeader } from '@/components/ui/AnalyticsCharts';
 import { useToast } from '@/components/ToastProvider';
 import { TaskQuestionCard, TaskTypeBadge } from '@/components/TaskQuestionCard';
 import { PracticeDetailModal } from '@/components/PracticeDetailModal';
@@ -407,7 +407,7 @@ export function TeacherQuestionSetsView({ currentUser, onChanged }: TeacherQuest
           <button
             type="button"
             onClick={() => setEditingSet(null)}
-            className="inline-flex items-center gap-2 rounded-xl border border-white/15 bg-white/5 px-3.5 py-2 text-xs font-semibold text-slate-200 hover:bg-white/10"
+            className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700 shadow-sm hover:bg-slate-50 transition"
           >
             <ArrowLeft className="h-4 w-4" />
             Quay lại Danh sách Bộ đề
@@ -417,8 +417,8 @@ export function TeacherQuestionSetsView({ currentUser, onChanged }: TeacherQuest
             <span
               className={`rounded-full px-3 py-1 text-xs font-semibold ${
                 isOwner
-                  ? 'border border-indigo-500/35 bg-indigo-500/15 text-indigo-300'
-                  : 'border border-slate-500/35 bg-slate-500/15 text-slate-300'
+                  ? 'border border-indigo-200 bg-indigo-50 text-indigo-700'
+                  : 'border border-slate-200 bg-slate-100 text-slate-600'
               }`}
             >
               {isOwner ? 'Bộ đề của tôi' : 'Bộ đề tham khảo (Chỉ xem)'}
@@ -428,10 +428,10 @@ export function TeacherQuestionSetsView({ currentUser, onChanged }: TeacherQuest
               <button
                 type="button"
                 onClick={() => handleTogglePublish(editingSet)}
-                className={`inline-flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-xs font-semibold transition ${
+                className={`inline-flex items-center gap-1.5 rounded-2xl px-4 py-2 text-xs font-semibold transition ${
                   editingSet.is_published
-                    ? 'border border-emerald-500/35 bg-emerald-500/15 text-emerald-300'
-                    : 'bg-emerald-600 text-white hover:bg-emerald-500'
+                    ? 'border border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
+                    : 'bg-emerald-600 text-white shadow-md shadow-emerald-600/20 hover:bg-emerald-500'
                 }`}
               >
                 {editingSet.is_published ? <Eye className="h-3.5 w-3.5" /> : <Unlock className="h-3.5 w-3.5" />}
@@ -441,7 +441,7 @@ export function TeacherQuestionSetsView({ currentUser, onChanged }: TeacherQuest
               <button
                 type="button"
                 onClick={() => handleCloneSet(editingSet)}
-                className="inline-flex items-center gap-1.5 rounded-xl bg-indigo-600 px-3.5 py-2 text-xs font-semibold text-white hover:bg-indigo-500"
+                className="inline-flex items-center gap-1.5 rounded-2xl bg-indigo-600 px-4 py-2 text-xs font-semibold text-white shadow-sm hover:bg-indigo-500"
               >
                 <Copy className="h-3.5 w-3.5" />
                 Tạo bản sao về kho của tôi
@@ -454,24 +454,24 @@ export function TeacherQuestionSetsView({ currentUser, onChanged }: TeacherQuest
         <form onSubmit={handleSaveSetMeta} className="section-card space-y-4">
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <div className="sm:col-span-2">
-              <label className="mb-1 block text-xs font-semibold text-slate-300">Tên bộ đề</label>
+              <label className="mb-1 block text-xs font-semibold text-slate-600">Tên bộ đề</label>
               <input
                 type="text"
                 required
                 disabled={!isOwner}
                 value={editorTitle}
                 onChange={(e) => setEditorTitle(e.target.value)}
-                className="w-full rounded-xl border border-white/15 bg-slate-950/75 px-3.5 py-2 text-sm text-white disabled:opacity-65"
+                className="w-full rounded-xl border border-slate-200 bg-slate-50/80 px-3.5 py-2.5 text-sm text-slate-900 focus:border-indigo-500 focus:bg-white focus:outline-none disabled:opacity-65"
               />
             </div>
 
             <div>
-              <label className="mb-1 block text-xs font-semibold text-slate-300">Định dạng bài thi</label>
+              <label className="mb-1 block text-xs font-semibold text-slate-600">Định dạng bài thi</label>
               <select
                 value={editorExamType}
                 disabled={!isOwner}
                 onChange={(e) => setEditorExamType(e.target.value as ExamType)}
-                className="w-full rounded-xl border border-white/15 bg-slate-950/75 px-3 py-2 text-sm text-white disabled:opacity-65"
+                className="w-full rounded-xl border border-slate-200 bg-slate-50/80 px-3 py-2.5 text-sm text-slate-900 focus:border-indigo-500 focus:bg-white focus:outline-none disabled:opacity-65"
               >
                 <option value="general">Luyện tập chung</option>
                 <option value="ielts">IELTS Speaking</option>
@@ -481,12 +481,12 @@ export function TeacherQuestionSetsView({ currentUser, onChanged }: TeacherQuest
             </div>
 
             <div>
-              <label className="mb-1 block text-xs font-semibold text-slate-300">Trình độ</label>
+              <label className="mb-1 block text-xs font-semibold text-slate-600">Trình độ</label>
               <select
                 value={editorLevel}
                 disabled={!isOwner}
                 onChange={(e) => setEditorLevel(e.target.value as QuestionLevel)}
-                className="w-full rounded-xl border border-white/15 bg-slate-950/75 px-3 py-2 text-sm text-white disabled:opacity-65"
+                className="w-full rounded-xl border border-slate-200 bg-slate-50/80 px-3 py-2.5 text-sm text-slate-900 focus:border-indigo-500 focus:bg-white focus:outline-none disabled:opacity-65"
               >
                 <option value="beginner">Cơ bản</option>
                 <option value="intermediate">Trung cấp</option>
@@ -496,13 +496,13 @@ export function TeacherQuestionSetsView({ currentUser, onChanged }: TeacherQuest
           </div>
 
           <div>
-            <label className="mb-1 block text-xs font-semibold text-slate-300">Mô tả ngắn</label>
+            <label className="mb-1 block text-xs font-semibold text-slate-600">Mô tả ngắn</label>
             <textarea
               rows={2}
               disabled={!isOwner}
               value={editorDesc}
               onChange={(e) => setEditorDesc(e.target.value)}
-              className="w-full rounded-xl border border-white/15 bg-slate-950/75 px-3.5 py-2 text-sm text-white disabled:opacity-65"
+              className="w-full rounded-xl border border-slate-200 bg-slate-50/80 px-3.5 py-2.5 text-sm text-slate-900 focus:border-indigo-500 focus:bg-white focus:outline-none disabled:opacity-65"
             />
           </div>
 
@@ -511,7 +511,7 @@ export function TeacherQuestionSetsView({ currentUser, onChanged }: TeacherQuest
               <button
                 type="submit"
                 disabled={savingSetMeta}
-                className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2 text-xs font-semibold text-white hover:bg-indigo-500 disabled:opacity-50"
+                className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2 text-xs font-semibold text-white shadow-sm hover:bg-indigo-500 disabled:opacity-50"
               >
                 {savingSetMeta && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
                 Lưu thông tin bộ đề
@@ -522,15 +522,15 @@ export function TeacherQuestionSetsView({ currentUser, onChanged }: TeacherQuest
 
         {/* Questions List */}
         <div className="section-card space-y-4">
-          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 pb-3">
-            <h3 className="text-base font-bold text-white">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 pb-3">
+            <h3 className="text-base font-bold text-slate-900">
               Danh sách Câu hỏi ({questions.length})
             </h3>
             {isOwner && (
               <button
                 type="button"
                 onClick={openAddQuestion}
-                className="inline-flex items-center gap-1.5 rounded-xl bg-sky-600 px-3.5 py-2 text-xs font-semibold text-white hover:bg-sky-500"
+                className="inline-flex items-center gap-1.5 rounded-xl bg-sky-600 px-3.5 py-2 text-xs font-semibold text-white shadow-sm hover:bg-sky-500"
               >
                 <Plus className="h-4 w-4" />
                 Thêm câu hỏi mới
@@ -540,10 +540,10 @@ export function TeacherQuestionSetsView({ currentUser, onChanged }: TeacherQuest
 
           {loadingQuestions ? (
             <div className="flex justify-center py-10">
-              <Loader2 className="h-6 w-6 animate-spin text-indigo-400" />
+              <Loader2 className="h-6 w-6 animate-spin text-indigo-600" />
             </div>
           ) : questions.length === 0 ? (
-            <div className="rounded-xl border border-white/10 bg-slate-950/50 p-8 text-center text-sm text-slate-400">
+            <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-8 text-center text-sm text-slate-500">
               Bộ đề này chưa có câu hỏi nào.{isOwner ? ' Nhấn "Thêm câu hỏi mới" để bắt đầu biên soạn.' : ''}
             </div>
           ) : (
@@ -551,20 +551,20 @@ export function TeacherQuestionSetsView({ currentUser, onChanged }: TeacherQuest
               {questions.map((q) => (
                 <div
                   key={q.id}
-                  className="rounded-2xl border border-white/10 bg-slate-950/60 p-4 space-y-3"
+                  className="rounded-2xl border border-slate-200 bg-slate-50/60 p-4 space-y-3"
                 >
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <div className="flex flex-wrap items-center gap-2">
-                      <span className="rounded-lg bg-indigo-600/25 px-2.5 py-1 text-xs font-bold text-indigo-300">
+                      <span className="rounded-xl border border-indigo-200 bg-indigo-50 px-2.5 py-1 text-xs font-bold text-indigo-700">
                         Câu {q.order_num}
                       </span>
                       {q.part_title && (
-                        <span className="rounded-lg border border-white/10 bg-white/5 px-2.5 py-1 text-xs text-slate-300">
+                        <span className="rounded-xl border border-slate-200 bg-white px-2.5 py-1 text-xs font-medium text-slate-600">
                           {q.part_title}
                         </span>
                       )}
                       <TaskTypeBadge taskType={q.task_type} />
-                      <span className="inline-flex items-center gap-1 text-xs text-slate-400">
+                      <span className="inline-flex items-center gap-1 text-xs text-slate-500">
                         <Clock className="h-3.5 w-3.5" />
                         Chuẩn bị: {q.prep_time}s · Trả lời: {q.response_time}s
                       </span>
@@ -575,7 +575,7 @@ export function TeacherQuestionSetsView({ currentUser, onChanged }: TeacherQuest
                         <button
                           type="button"
                           onClick={() => openEditQuestion(q)}
-                          className="inline-flex items-center gap-1 rounded-lg border border-white/15 bg-white/5 px-2.5 py-1 text-xs text-slate-200 hover:bg-white/10"
+                          className="inline-flex items-center gap-1 rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
                         >
                           <Edit3 className="h-3.5 w-3.5" />
                           Sửa
@@ -583,7 +583,7 @@ export function TeacherQuestionSetsView({ currentUser, onChanged }: TeacherQuest
                         <button
                           type="button"
                           onClick={() => handleDeleteQuestion(q)}
-                          className="rounded-lg border border-rose-500/35 bg-rose-500/10 p-1.5 text-rose-300 hover:bg-rose-500/20"
+                          className="rounded-xl border border-rose-200 bg-rose-50 p-1.5 text-rose-600 hover:bg-rose-100"
                           title="Xóa câu hỏi"
                         >
                           <Trash2 className="h-3.5 w-3.5" />
@@ -609,13 +609,11 @@ export function TeacherQuestionSetsView({ currentUser, onChanged }: TeacherQuest
           <form onSubmit={handleSaveQuestion} className="space-y-4">
             <div className="grid gap-3 sm:grid-cols-2">
               <div>
-                <label className="mb-1 block text-xs font-semibold text-slate-300">
-                  Dạng bài
-                </label>
+                <label className="mb-1 block text-xs font-semibold text-slate-600">Dạng bài</label>
                 <select
                   value={qTaskType}
                   onChange={(e) => handleTaskTypeChange(e.target.value as TaskType)}
-                  className="w-full rounded-xl border border-white/15 bg-slate-950/75 px-3 py-2 text-sm text-white"
+                  className="w-full rounded-xl border border-slate-200 bg-slate-50/80 px-3 py-2 text-sm text-slate-900 focus:border-indigo-500 focus:bg-white focus:outline-none"
                 >
                   {availableTypes.map((t) => (
                     <option key={t.id} value={t.id}>
@@ -625,7 +623,7 @@ export function TeacherQuestionSetsView({ currentUser, onChanged }: TeacherQuest
                 </select>
               </div>
               <div>
-                <label className="mb-1 block text-xs font-semibold text-slate-300">
+                <label className="mb-1 block text-xs font-semibold text-slate-600">
                   Phần (VD: Part 1, Task 2)
                 </label>
                 <input
@@ -633,24 +631,24 @@ export function TeacherQuestionSetsView({ currentUser, onChanged }: TeacherQuest
                   value={qPartTitle}
                   onChange={(e) => setQPartTitle(e.target.value)}
                   placeholder="VD: Phần 1 / Part 1"
-                  className="w-full rounded-xl border border-white/15 bg-slate-950/75 px-3 py-2 text-sm text-white"
+                  className="w-full rounded-xl border border-slate-200 bg-slate-50/80 px-3 py-2 text-sm text-slate-900 focus:border-indigo-500 focus:bg-white focus:outline-none"
                 />
               </div>
             </div>
 
             <div className="grid grid-cols-3 gap-3">
               <div>
-                <label className="mb-1 block text-xs font-semibold text-slate-300">Thứ tự</label>
+                <label className="mb-1 block text-xs font-semibold text-slate-600">Thứ tự</label>
                 <input
                   type="number"
                   min={1}
                   value={qOrderNum}
                   onChange={(e) => setQOrderNum(Number(e.target.value))}
-                  className="w-full rounded-xl border border-white/15 bg-slate-950/75 px-3 py-2 text-sm text-white"
+                  className="w-full rounded-xl border border-slate-200 bg-slate-50/80 px-3 py-2 text-sm text-slate-900 focus:border-indigo-500 focus:bg-white focus:outline-none"
                 />
               </div>
               <div>
-                <label className="mb-1 block text-xs font-semibold text-slate-300">
+                <label className="mb-1 block text-xs font-semibold text-slate-600">
                   Chuẩn bị (giây)
                 </label>
                 <input
@@ -658,11 +656,11 @@ export function TeacherQuestionSetsView({ currentUser, onChanged }: TeacherQuest
                   min={0}
                   value={qPrepTime}
                   onChange={(e) => setQPrepTime(Number(e.target.value))}
-                  className="w-full rounded-xl border border-white/15 bg-slate-950/75 px-3 py-2 text-sm text-white"
+                  className="w-full rounded-xl border border-slate-200 bg-slate-50/80 px-3 py-2 text-sm text-slate-900 focus:border-indigo-500 focus:bg-white focus:outline-none"
                 />
               </div>
               <div>
-                <label className="mb-1 block text-xs font-semibold text-slate-300">
+                <label className="mb-1 block text-xs font-semibold text-slate-600">
                   Trả lời (giây)
                 </label>
                 <input
@@ -670,13 +668,13 @@ export function TeacherQuestionSetsView({ currentUser, onChanged }: TeacherQuest
                   min={5}
                   value={qResponseTime}
                   onChange={(e) => setQResponseTime(Number(e.target.value))}
-                  className="w-full rounded-xl border border-white/15 bg-slate-950/75 px-3 py-2 text-sm text-white"
+                  className="w-full rounded-xl border border-slate-200 bg-slate-50/80 px-3 py-2 text-sm text-slate-900 focus:border-indigo-500 focus:bg-white focus:outline-none"
                 />
               </div>
             </div>
 
             <div>
-              <label className="mb-1 block text-xs font-semibold text-slate-300">
+              <label className="mb-1 block text-xs font-semibold text-slate-600">
                 {qTaskType === 'read_aloud'
                   ? 'Đoạn văn cần đọc to *'
                   : 'Nội dung câu hỏi / Đề bài *'}
@@ -687,13 +685,13 @@ export function TeacherQuestionSetsView({ currentUser, onChanged }: TeacherQuest
                 value={qText}
                 onChange={(e) => setQText(e.target.value)}
                 placeholder="Nhập đề bài Speaking..."
-                className="w-full rounded-xl border border-white/15 bg-slate-950/75 px-3.5 py-2.5 text-sm text-white"
+                className="w-full rounded-xl border border-slate-200 bg-slate-50/80 px-3.5 py-2.5 text-sm text-slate-900 focus:border-indigo-500 focus:bg-white focus:outline-none"
               />
             </div>
 
             {['information_qa', 'long_turn', 'problem_solution'].includes(qTaskType) && (
               <div>
-                <label className="mb-1 block text-xs font-semibold text-slate-300">
+                <label className="mb-1 block text-xs font-semibold text-slate-600">
                   {qTaskType === 'long_turn'
                     ? 'Các ý gợi ý cần nói (mỗi ý 1 dòng)'
                     : qTaskType === 'problem_solution'
@@ -705,18 +703,18 @@ export function TeacherQuestionSetsView({ currentUser, onChanged }: TeacherQuest
                   value={qRefText}
                   onChange={(e) => setQRefText(e.target.value)}
                   placeholder="Mỗi gợi ý trên một dòng..."
-                  className="w-full rounded-xl border border-white/15 bg-slate-950/75 px-3.5 py-2.5 text-sm text-white"
+                  className="w-full rounded-xl border border-slate-200 bg-slate-50/80 px-3.5 py-2.5 text-sm text-slate-900 focus:border-indigo-500 focus:bg-white focus:outline-none"
                 />
               </div>
             )}
 
             {qTaskType === 'picture_description' && (
-              <div className="space-y-2 rounded-xl border border-white/10 bg-slate-950/60 p-3.5">
-                <label className="block text-xs font-semibold text-slate-300">
+              <div className="space-y-2 rounded-2xl border border-slate-200 bg-slate-50/80 p-3.5">
+                <label className="block text-xs font-semibold text-slate-700">
                   Hình ảnh minh họa đề thi
                 </label>
                 <div className="flex flex-wrap items-center gap-3">
-                  <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-xl border border-indigo-500/35 bg-indigo-500/15 px-3 py-2 text-xs font-semibold text-indigo-300 hover:bg-indigo-500/25">
+                  <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-xl border border-indigo-200 bg-indigo-50 px-3.5 py-2 text-xs font-semibold text-indigo-700 hover:bg-indigo-100">
                     <ImagePlus className="h-4 w-4" />
                     Chọn ảnh tải lên
                     <input
@@ -730,7 +728,7 @@ export function TeacherQuestionSetsView({ currentUser, onChanged }: TeacherQuest
                     <button
                       type="button"
                       onClick={() => setQImageUrl('')}
-                      className="text-xs text-rose-300 underline"
+                      className="text-xs font-semibold text-rose-600 underline"
                     >
                       Xóa ảnh
                     </button>
@@ -740,7 +738,7 @@ export function TeacherQuestionSetsView({ currentUser, onChanged }: TeacherQuest
                   <img
                     src={qImageUrl}
                     alt="Ảnh xem trước"
-                    className="mt-2 max-h-48 rounded-lg border border-white/10 object-contain"
+                    className="mt-2 max-h-48 rounded-xl border border-slate-200 object-contain bg-white"
                   />
                 )}
               </div>
@@ -750,14 +748,14 @@ export function TeacherQuestionSetsView({ currentUser, onChanged }: TeacherQuest
               <button
                 type="button"
                 onClick={() => setQModalOpen(false)}
-                className="rounded-xl border border-white/15 bg-white/5 px-4 py-2 text-xs font-semibold text-slate-300"
+                className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
               >
                 Hủy
               </button>
               <button
                 type="submit"
                 disabled={savingQuestion}
-                className="inline-flex items-center gap-1.5 rounded-xl bg-indigo-600 px-4 py-2 text-xs font-semibold text-white hover:bg-indigo-500 disabled:opacity-50"
+                className="inline-flex items-center gap-1.5 rounded-xl bg-indigo-600 px-4 py-2 text-xs font-semibold text-white shadow-sm hover:bg-indigo-500 disabled:opacity-50"
               >
                 {savingQuestion && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
                 {editingQuestion ? 'Cập nhật câu hỏi' : 'Thêm vào bộ đề'}
@@ -772,26 +770,22 @@ export function TeacherQuestionSetsView({ currentUser, onChanged }: TeacherQuest
   // VIEW A: QUESTION SETS CATALOG
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h2 className="flex items-center gap-2.5 text-2xl font-bold text-white">
-            <BookOpen className="h-6 w-6 text-indigo-400" />
-            Quản lý Bộ đề Speaking
-          </h2>
-          <p className="mt-1 text-sm text-slate-400">
-            Tạo bộ đề mới, biên soạn câu hỏi theo chuẩn thi và tạo bản sao các bộ đề tham khảo về kho của bạn.
-          </p>
-        </div>
-
-        <button
-          type="button"
-          onClick={() => setCreateOpen(true)}
-          className="btn-glow inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-indigo-600/25 hover:bg-indigo-500"
-        >
-          <Plus className="h-4 w-4" />
-          Tạo bộ đề mới
-        </button>
-      </div>
+      <PageHeader
+        eyebrow="KHO BỘ ĐỀ SPEAKING"
+        title="Quản lý Bộ đề Speaking"
+        subtitle="Tạo bộ đề mới, biên soạn câu hỏi theo chuẩn thi và tạo bản sao các bộ đề tham khảo về kho của bạn."
+        pill={<span>{filteredSets.length} bộ đề</span>}
+        action={
+          <button
+            type="button"
+            onClick={() => setCreateOpen(true)}
+            className="btn-glow inline-flex items-center gap-2 rounded-2xl bg-indigo-600 px-4 py-2.5 text-sm font-bold text-white shadow-md shadow-indigo-600/20 hover:bg-indigo-500 transition"
+          >
+            <Plus className="h-4 w-4" />
+            Tạo bộ đề mới
+          </button>
+        }
+      />
 
       {/* Filters */}
       <div className="section-card grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
@@ -802,14 +796,14 @@ export function TeacherQuestionSetsView({ currentUser, onChanged }: TeacherQuest
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="Tìm tên bộ đề, tác giả..."
-            className="w-full rounded-xl border border-white/15 bg-slate-950/75 py-2 pl-9 pr-3 text-sm text-white placeholder-slate-500 focus:border-indigo-500 focus:outline-none"
+            className="w-full rounded-xl border border-slate-200 bg-slate-50/80 py-2.5 pl-9 pr-3 text-sm text-slate-900 placeholder-slate-400 focus:border-indigo-500 focus:bg-white focus:outline-none"
           />
         </div>
 
         <select
           value={ownerFilter}
           onChange={(e) => setOwnerFilter(e.target.value as 'all' | 'mine' | 'others')}
-          className="rounded-xl border border-white/15 bg-slate-950/75 px-3 py-2 text-sm text-white"
+          className="rounded-xl border border-slate-200 bg-slate-50/80 px-3 py-2.5 text-sm text-slate-900 focus:border-indigo-500 focus:bg-white focus:outline-none"
         >
           <option value="all">Tất cả bộ đề</option>
           <option value="mine">Bộ đề của tôi</option>
@@ -819,7 +813,7 @@ export function TeacherQuestionSetsView({ currentUser, onChanged }: TeacherQuest
         <select
           value={levelFilter}
           onChange={(e) => setLevelFilter(e.target.value)}
-          className="rounded-xl border border-white/15 bg-slate-950/75 px-3 py-2 text-sm text-white"
+          className="rounded-xl border border-slate-200 bg-slate-50/80 px-3 py-2.5 text-sm text-slate-900 focus:border-indigo-500 focus:bg-white focus:outline-none"
         >
           <option value="">Mọi trình độ</option>
           <option value="beginner">Cơ bản</option>
@@ -830,7 +824,7 @@ export function TeacherQuestionSetsView({ currentUser, onChanged }: TeacherQuest
         <select
           value={publishFilter}
           onChange={(e) => setPublishFilter(e.target.value)}
-          className="rounded-xl border border-white/15 bg-slate-950/75 px-3 py-2 text-sm text-white"
+          className="rounded-xl border border-slate-200 bg-slate-50/80 px-3 py-2.5 text-sm text-slate-900 focus:border-indigo-500 focus:bg-white focus:outline-none"
         >
           <option value="">Tất cả trạng thái</option>
           <option value="published">Đang mở</option>
@@ -840,10 +834,10 @@ export function TeacherQuestionSetsView({ currentUser, onChanged }: TeacherQuest
 
       {loading ? (
         <div className="flex justify-center py-14">
-          <Loader2 className="h-8 w-8 animate-spin text-indigo-400" />
+          <Loader2 className="h-8 w-8 animate-spin text-indigo-600" />
         </div>
       ) : filteredSets.length === 0 ? (
-        <div className="section-card py-12 text-center text-sm text-slate-400">
+        <div className="section-card py-12 text-center text-sm text-slate-500">
           Chưa có bộ đề nào khớp tiêu chí lọc.
         </div>
       ) : (
@@ -853,53 +847,57 @@ export function TeacherQuestionSetsView({ currentUser, onChanged }: TeacherQuest
             return (
               <div
                 key={qs.id}
-                className="section-card flex flex-col justify-between gap-4 hover:border-indigo-500/40 transition"
+                className="section-card card-interactive flex flex-col justify-between gap-4"
               >
                 <div className="space-y-2.5">
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <span
                       className={`rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${
                         isOwner
-                          ? 'border border-indigo-500/35 bg-indigo-500/15 text-indigo-300'
-                          : 'border border-slate-500/35 bg-slate-500/15 text-slate-300'
+                          ? 'border border-indigo-200 bg-indigo-50 text-indigo-700'
+                          : 'border border-slate-200 bg-slate-100 text-slate-600'
                       }`}
                     >
                       {isOwner ? 'Của tôi' : 'Tham khảo (Chỉ xem)'}
                     </span>
 
                     {qs.is_published ? (
-                      <span className="inline-flex items-center gap-1 rounded-full border border-emerald-500/35 bg-emerald-500/15 px-2.5 py-0.5 text-[11px] font-semibold text-emerald-300">
+                      <span className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-0.5 text-[11px] font-semibold text-emerald-700">
                         <Eye className="h-3 w-3" /> Đang mở
                       </span>
                     ) : (
-                      <span className="inline-flex items-center gap-1 rounded-full border border-white/15 bg-white/5 px-2.5 py-0.5 text-[11px] font-semibold text-slate-400">
+                      <span className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-slate-50 px-2.5 py-0.5 text-[11px] font-semibold text-slate-500">
                         <EyeOff className="h-3 w-3" /> Nháp
                       </span>
                     )}
                   </div>
 
-                  <h3 className="text-base font-bold text-white line-clamp-2">{qs.title}</h3>
+                  <h3 className="text-base font-bold text-slate-900 line-clamp-2">{qs.title}</h3>
                   {qs.description && (
-                    <p className="text-xs text-slate-400 line-clamp-2">{qs.description}</p>
+                    <p className="text-xs text-slate-500 line-clamp-2">{qs.description}</p>
                   )}
 
-                  <div className="flex flex-wrap items-center gap-2 text-[11px] text-slate-300 pt-1">
-                    <span className="rounded bg-white/5 px-2 py-0.5">{getExamTypeName(qs.exam_type)}</span>
-                    <span className="rounded bg-white/5 px-2 py-0.5">{getLevelLabel(qs.level)}</span>
-                    <span className="rounded bg-sky-500/15 px-2 py-0.5 text-sky-300 font-semibold">
+                  <div className="flex flex-wrap items-center gap-2 text-[11px] text-slate-600 pt-1">
+                    <span className="rounded-lg bg-slate-100 px-2 py-0.5 font-medium">
+                      {getExamTypeName(qs.exam_type)}
+                    </span>
+                    <span className="rounded-lg bg-slate-100 px-2 py-0.5 font-medium">
+                      {getLevelLabel(qs.level)}
+                    </span>
+                    <span className="rounded-lg border border-sky-200 bg-sky-50 px-2 py-0.5 text-sky-700 font-semibold">
                       {qs.question_count || 0} câu
                     </span>
                   </div>
-                  <div className="text-[11px] text-slate-400">
-                    Tác giả: <strong className="text-slate-200">{qs.creator_name}</strong>
+                  <div className="text-[11px] text-slate-500">
+                    Tác giả: <strong className="text-slate-800">{qs.creator_name}</strong>
                   </div>
                 </div>
 
-                <div className="flex flex-wrap items-center gap-2 border-t border-white/10 pt-3">
+                <div className="flex flex-wrap items-center gap-2 border-t border-slate-100 pt-3">
                   <button
                     type="button"
                     onClick={() => handleOpenEditor(qs)}
-                    className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-indigo-600/90 px-3 py-2 text-xs font-semibold text-white hover:bg-indigo-500"
+                    className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-indigo-600 px-3 py-2 text-xs font-semibold text-white shadow-sm hover:bg-indigo-500 transition"
                   >
                     <Edit3 className="h-3.5 w-3.5" />
                     {isOwner ? 'Biên soạn' : 'Xem câu hỏi'}
@@ -909,7 +907,7 @@ export function TeacherQuestionSetsView({ currentUser, onChanged }: TeacherQuest
                     <button
                       type="button"
                       onClick={() => handleCloneSet(qs)}
-                      className="inline-flex items-center gap-1 rounded-xl border border-sky-500/35 bg-sky-500/15 px-3 py-2 text-xs font-semibold text-sky-300 hover:bg-sky-500/25"
+                      className="inline-flex items-center gap-1 rounded-xl border border-sky-200 bg-sky-50 px-3 py-2 text-xs font-semibold text-sky-700 hover:bg-sky-100 transition"
                       title="Tạo bản sao bộ đề về kho của tôi"
                     >
                       <Copy className="h-3.5 w-3.5" />
@@ -920,10 +918,10 @@ export function TeacherQuestionSetsView({ currentUser, onChanged }: TeacherQuest
                   <button
                     type="button"
                     onClick={() => handleOpenSubmissions(qs)}
-                    className="inline-flex items-center gap-1 rounded-xl border border-white/15 bg-white/5 px-2.5 py-2 text-xs font-semibold text-slate-200 hover:bg-white/10"
+                    className="inline-flex items-center gap-1 rounded-xl border border-slate-200 bg-white px-2.5 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition"
                     title="Xem bài nộp học viên"
                   >
-                    <FileCheck2 className="h-3.5 w-3.5 text-emerald-400" />
+                    <FileCheck2 className="h-3.5 w-3.5 text-emerald-600" />
                     Bài nộp
                   </button>
 
@@ -932,7 +930,7 @@ export function TeacherQuestionSetsView({ currentUser, onChanged }: TeacherQuest
                       <button
                         type="button"
                         onClick={() => handleTogglePublish(qs)}
-                        className="rounded-xl border border-white/15 bg-white/5 p-2 text-slate-200 hover:bg-white/10"
+                        className="rounded-xl border border-slate-200 bg-white p-2 text-slate-600 hover:bg-slate-50 transition"
                         title={qs.is_published ? 'Ẩn bộ đề' : 'Mở bộ đề cho học viên'}
                       >
                         {qs.is_published ? <Lock className="h-3.5 w-3.5" /> : <Unlock className="h-3.5 w-3.5" />}
@@ -940,7 +938,7 @@ export function TeacherQuestionSetsView({ currentUser, onChanged }: TeacherQuest
                       <button
                         type="button"
                         onClick={() => handleDeleteSet(qs)}
-                        className="rounded-xl border border-rose-500/35 bg-rose-500/10 p-2 text-rose-300 hover:bg-rose-500/20"
+                        className="rounded-xl border border-rose-200 bg-rose-50 p-2 text-rose-600 hover:bg-rose-100 transition"
                         title="Xóa bộ đề"
                       >
                         <Trash2 className="h-3.5 w-3.5" />
@@ -963,8 +961,8 @@ export function TeacherQuestionSetsView({ currentUser, onChanged }: TeacherQuest
       >
         <form onSubmit={handleCreateSet} className="space-y-4">
           <div>
-            <label className="mb-1 block text-xs font-semibold text-slate-300">
-              Tên bộ đề <span className="text-rose-400">*</span>
+            <label className="mb-1 block text-xs font-semibold text-slate-600">
+              Tên bộ đề <span className="text-rose-500">*</span>
             </label>
             <input
               type="text"
@@ -972,17 +970,17 @@ export function TeacherQuestionSetsView({ currentUser, onChanged }: TeacherQuest
               value={newTitle}
               onChange={(e) => setNewTitle(e.target.value)}
               placeholder="VD: IELTS Speaking Part 1-3 Travel"
-              className="w-full rounded-xl border border-white/15 bg-slate-950/75 px-3.5 py-2.5 text-sm text-white"
+              className="w-full rounded-xl border border-slate-200 bg-slate-50/80 px-3.5 py-2.5 text-sm text-slate-900 focus:border-indigo-500 focus:bg-white focus:outline-none"
             />
           </div>
 
           <div className="grid gap-3 sm:grid-cols-2">
             <div>
-              <label className="mb-1 block text-xs font-semibold text-slate-300">Định dạng thi</label>
+              <label className="mb-1 block text-xs font-semibold text-slate-600">Định dạng thi</label>
               <select
                 value={newExamType}
                 onChange={(e) => setNewExamType(e.target.value as ExamType)}
-                className="w-full rounded-xl border border-white/15 bg-slate-950/75 px-3 py-2 text-sm text-white"
+                className="w-full rounded-xl border border-slate-200 bg-slate-50/80 px-3 py-2 text-sm text-slate-900 focus:border-indigo-500 focus:bg-white focus:outline-none"
               >
                 <option value="general">Luyện tập chung</option>
                 <option value="ielts">IELTS Speaking</option>
@@ -991,11 +989,11 @@ export function TeacherQuestionSetsView({ currentUser, onChanged }: TeacherQuest
               </select>
             </div>
             <div>
-              <label className="mb-1 block text-xs font-semibold text-slate-300">Trình độ</label>
+              <label className="mb-1 block text-xs font-semibold text-slate-600">Trình độ</label>
               <select
                 value={newLevel}
                 onChange={(e) => setNewLevel(e.target.value as QuestionLevel)}
-                className="w-full rounded-xl border border-white/15 bg-slate-950/75 px-3 py-2 text-sm text-white"
+                className="w-full rounded-xl border border-slate-200 bg-slate-50/80 px-3 py-2 text-sm text-slate-900 focus:border-indigo-500 focus:bg-white focus:outline-none"
               >
                 <option value="beginner">Cơ bản</option>
                 <option value="intermediate">Trung cấp</option>
@@ -1005,13 +1003,13 @@ export function TeacherQuestionSetsView({ currentUser, onChanged }: TeacherQuest
           </div>
 
           <div>
-            <label className="mb-1 block text-xs font-semibold text-slate-300">Mô tả</label>
+            <label className="mb-1 block text-xs font-semibold text-slate-600">Mô tả</label>
             <textarea
               rows={2}
               value={newDesc}
               onChange={(e) => setNewDesc(e.target.value)}
               placeholder="Mô tả mục tiêu bộ đề..."
-              className="w-full rounded-xl border border-white/15 bg-slate-950/75 px-3.5 py-2 text-sm text-white"
+              className="w-full rounded-xl border border-slate-200 bg-slate-50/80 px-3.5 py-2 text-sm text-slate-900 focus:border-indigo-500 focus:bg-white focus:outline-none"
             />
           </div>
 
@@ -1019,14 +1017,14 @@ export function TeacherQuestionSetsView({ currentUser, onChanged }: TeacherQuest
             <button
               type="button"
               onClick={() => setCreateOpen(false)}
-              className="rounded-xl border border-white/15 bg-white/5 px-4 py-2 text-xs font-semibold text-slate-300"
+              className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
             >
               Hủy
             </button>
             <button
               type="submit"
               disabled={creating}
-              className="inline-flex items-center gap-1.5 rounded-xl bg-indigo-600 px-4 py-2 text-xs font-semibold text-white hover:bg-indigo-500 disabled:opacity-50"
+              className="inline-flex items-center gap-1.5 rounded-xl bg-indigo-600 px-4 py-2 text-xs font-semibold text-white shadow-sm hover:bg-indigo-500 disabled:opacity-50"
             >
               {creating && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
               Tạo &amp; Soạn câu hỏi
@@ -1044,10 +1042,10 @@ export function TeacherQuestionSetsView({ currentUser, onChanged }: TeacherQuest
       >
         {subsLoading ? (
           <div className="flex justify-center py-10">
-            <Loader2 className="h-6 w-6 animate-spin text-indigo-400" />
+            <Loader2 className="h-6 w-6 animate-spin text-indigo-600" />
           </div>
         ) : submissions.length === 0 ? (
-          <div className="py-8 text-center text-sm text-slate-400">
+          <div className="py-8 text-center text-sm text-slate-500">
             Chưa có học viên nào hoàn thành bộ đề này.
           </div>
         ) : (
@@ -1057,24 +1055,26 @@ export function TeacherQuestionSetsView({ currentUser, onChanged }: TeacherQuest
                 key={s.id}
                 type="button"
                 onClick={() => setSelectedSessionId(s.id)}
-                className="flex w-full items-center justify-between gap-3 rounded-xl border border-white/10 bg-slate-950/60 p-3.5 text-left hover:border-indigo-500/40 transition"
+                className="flex w-full items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-slate-50/75 p-3.5 text-left hover:border-indigo-300 hover:bg-white transition"
               >
                 <div>
-                  <div className="text-sm font-bold text-white">
+                  <div className="text-sm font-bold text-slate-900">
                     {s.student?.full_name || 'Học viên'}
                   </div>
-                  <div className="mt-0.5 text-xs text-slate-400">
+                  <div className="mt-0.5 text-xs text-slate-500">
                     {s.mode === 'exam' ? 'Thi thử' : 'Luyện tập'} ·{' '}
                     {new Date(s.completed_at || s.started_at).toLocaleString('vi-VN')}
                   </div>
                 </div>
                 <div className="flex items-center gap-2.5">
                   {s.status === 'reviewed' && (
-                    <span className="inline-flex items-center gap-1 rounded-full border border-sky-500/35 bg-sky-500/15 px-2.5 py-0.5 text-[11px] font-semibold text-sky-300">
+                    <span className="inline-flex items-center gap-1 rounded-full border border-sky-200 bg-sky-50 px-2.5 py-0.5 text-[11px] font-semibold text-sky-700">
                       <CheckCircle2 className="h-3 w-3" /> Đã duyệt
                     </span>
                   )}
-                  <span className="rounded-lg bg-emerald-500/20 px-3 py-1 text-sm font-bold text-emerald-300">
+                  <span
+                    className={`rounded-xl border px-3 py-1 text-sm font-extrabold tabular-nums ${scoreBadgeBgClass(s.score_total)}`}
+                  >
                     {formatScoreValue(s.score_total)}
                   </span>
                 </div>

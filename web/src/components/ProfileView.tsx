@@ -8,11 +8,11 @@ import {
   Loader2,
   Mic,
   Save,
-  UserCircle2,
 } from 'lucide-react';
 import { getMyTeacherInfo, updateProfile } from '@/lib/auth';
 import { saveVoiceEmbeddings } from '@/lib/voice';
 import { getAvatarUrl, hasVoiceEnrolled } from '@/lib/utils';
+import { PageHeader } from './ui/AnalyticsCharts';
 import { VoiceEnrollModal } from './VoiceEnrollModal';
 import { useToast } from './ToastProvider';
 import type { Profile, TeacherBasicInfo } from '@/lib/types';
@@ -85,18 +85,25 @@ export function ProfileView({ profile, gpuUrl, onProfileUpdated }: ProfileViewPr
   };
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h2 className="flex items-center gap-2.5 text-2xl font-bold text-white">
-          <UserCircle2 className="h-6 w-6 text-indigo-400" />
-          Hồ sơ Cá nhân
-        </h2>
-        <p className="mt-1 text-sm text-slate-400">
-          {isAdmin
+    <div className="space-y-6 animate-slidein">
+      <PageHeader
+        eyebrow="HỒ SƠ CÁ NHÂN"
+        title="Thông tin tài khoản & Giọng nói"
+        subtitle={
+          isAdmin
             ? 'Cập nhật thông tin tài khoản của bạn.'
-            : 'Quản lý thông tin tài khoản và mẫu giọng nói cá nhân.'}
-        </p>
-      </div>
+            : 'Quản lý thông tin tài khoản và mẫu giọng nói cá nhân.'
+        }
+        pill={
+          <span>
+            {profile.role === 'admin'
+              ? 'Quản trị viên'
+              : profile.role === 'teacher'
+                ? 'Giáo viên'
+                : 'Học viên'}
+          </span>
+        }
+      />
 
       <div className={isAdmin ? 'max-w-3xl' : 'grid gap-6 lg:grid-cols-12'}>
         {/* Info Form */}
@@ -104,16 +111,16 @@ export function ProfileView({ profile, gpuUrl, onProfileUpdated }: ProfileViewPr
           onSubmit={handleSaveProfile}
           className={`section-card space-y-5 ${isAdmin ? '' : 'lg:col-span-7'}`}
         >
-          <div className="flex items-center gap-4 border-b border-white/10 pb-4">
+          <div className="flex items-center gap-4 border-b border-slate-100 pb-4">
             <img
               src={getAvatarUrl(profile.full_name, 128)}
               alt={profile.full_name}
-              className="h-16 w-16 rounded-2xl border border-white/15 object-cover"
+              className="h-16 w-16 rounded-2xl border border-indigo-100 object-cover shadow-sm"
             />
-            <div>
-              <h3 className="text-lg font-bold text-white">{profile.full_name}</h3>
-              <p className="text-xs text-slate-400">{profile.email}</p>
-              <span className="mt-1 inline-block rounded-full border border-indigo-500/35 bg-indigo-500/15 px-2.5 py-0.5 text-[11px] font-semibold uppercase text-indigo-300">
+            <div className="min-w-0">
+              <h3 className="truncate text-lg font-bold text-slate-900">{profile.full_name}</h3>
+              <p className="truncate text-xs text-slate-500">{profile.email}</p>
+              <span className="mt-1.5 inline-block rounded-full border border-indigo-200 bg-indigo-50 px-2.5 py-0.5 text-[11px] font-semibold uppercase text-indigo-700">
                 {profile.role === 'admin'
                   ? 'Quản trị viên'
                   : profile.role === 'teacher'
@@ -125,20 +132,20 @@ export function ProfileView({ profile, gpuUrl, onProfileUpdated }: ProfileViewPr
 
           <div className="grid gap-4 sm:grid-cols-2">
             <div>
-              <label className="mb-1.5 block text-xs font-semibold text-slate-300">
-                Họ và tên <span className="text-rose-400">*</span>
+              <label className="mb-1.5 block text-xs font-semibold text-slate-700">
+                Họ và tên <span className="text-rose-500">*</span>
               </label>
               <input
                 type="text"
                 required
                 value={fullName}
                 onChange={(e) => setFullName(e.target.value)}
-                className="w-full rounded-xl border border-white/15 bg-slate-950/75 px-3.5 py-2.5 text-sm text-white focus:border-indigo-500 focus:outline-none"
+                className="w-full rounded-xl border border-slate-200 bg-slate-50/70 px-3.5 py-2.5 text-sm text-slate-900 focus:border-indigo-500 focus:bg-white focus:outline-none"
               />
             </div>
 
             <div>
-              <label className="mb-1.5 block text-xs font-semibold text-slate-300">
+              <label className="mb-1.5 block text-xs font-semibold text-slate-700">
                 Số điện thoại
               </label>
               <input
@@ -146,23 +153,23 @@ export function ProfileView({ profile, gpuUrl, onProfileUpdated }: ProfileViewPr
                 value={phone}
                 onChange={(e) => setPhone(e.target.value)}
                 placeholder="Chưa cập nhật"
-                className="w-full rounded-xl border border-white/15 bg-slate-950/75 px-3.5 py-2.5 text-sm text-white focus:border-indigo-500 focus:outline-none"
+                className="w-full rounded-xl border border-slate-200 bg-slate-50/70 px-3.5 py-2.5 text-sm text-slate-900 focus:border-indigo-500 focus:bg-white focus:outline-none"
               />
             </div>
           </div>
 
           {profile.role === 'student' && (
-            <div className="rounded-xl border border-white/10 bg-slate-950/60 p-3.5 text-xs">
-              <div className="mb-1 flex items-center gap-1.5 font-semibold text-sky-300">
+            <div className="rounded-2xl border border-sky-100 bg-sky-50/70 p-4 text-xs">
+              <div className="mb-1 flex items-center gap-1.5 font-semibold text-sky-700">
                 <GraduationCap className="h-4 w-4" />
                 Giáo viên phụ trách lớp
               </div>
               {teacherInfo ? (
-                <div className="text-slate-200">
-                  <strong>{teacherInfo.full_name}</strong> · {teacherInfo.email}
+                <div className="text-slate-700">
+                  <strong className="text-slate-900">{teacherInfo.full_name}</strong> · {teacherInfo.email}
                 </div>
               ) : (
-                <div className="text-slate-400">Chưa được phân công giáo viên phụ trách.</div>
+                <div className="text-slate-500">Chưa được phân công giáo viên phụ trách.</div>
               )}
             </div>
           )}
@@ -171,7 +178,7 @@ export function ProfileView({ profile, gpuUrl, onProfileUpdated }: ProfileViewPr
             <button
               type="submit"
               disabled={saving}
-              className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-indigo-500 disabled:opacity-50 transition"
+              className="btn-glow inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white shadow-md shadow-indigo-600/20 hover:bg-indigo-500 disabled:opacity-50 transition"
             >
               {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
               Lưu thay đổi
@@ -184,15 +191,15 @@ export function ProfileView({ profile, gpuUrl, onProfileUpdated }: ProfileViewPr
           <div className="section-card lg:col-span-5 flex flex-col justify-between space-y-4">
             <div className="space-y-3">
               <div className="flex items-center justify-between gap-2">
-                <h3 className="flex items-center gap-2 text-base font-bold text-white">
-                  <Mic className="h-5 w-5 text-sky-400" />
+                <h3 className="flex items-center gap-2 text-base font-bold text-slate-900">
+                  <Mic className="h-5 w-5 text-indigo-600" />
                   Mẫu Giọng Nói Cá Nhân
                 </h3>
                 <span
                   className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${
                     voiceReady
-                      ? 'border border-emerald-500/40 bg-emerald-500/15 text-emerald-300'
-                      : 'border border-amber-500/40 bg-amber-500/15 text-amber-300'
+                      ? 'border border-emerald-200 bg-emerald-50 text-emerald-700'
+                      : 'border border-amber-200 bg-amber-50 text-amber-700'
                   }`}
                 >
                   {voiceReady ? 'Đã kích hoạt' : 'Chưa đăng ký'}
@@ -200,15 +207,15 @@ export function ProfileView({ profile, gpuUrl, onProfileUpdated }: ProfileViewPr
               </div>
 
               {voiceReady ? (
-                <div className="flex items-start gap-2.5 rounded-xl border border-emerald-500/35 bg-emerald-500/10 p-3.5 text-xs text-emerald-200">
-                  <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-400" />
+                <div className="flex items-start gap-2.5 rounded-2xl border border-emerald-200 bg-emerald-50/75 p-3.5 text-xs text-emerald-800">
+                  <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" />
                   <span>
                     Giọng nói của bạn đã được lưu để hệ thống tự động nhận diện trong hội thoại 1-1 và phân tích tiết dạy.
                   </span>
                 </div>
               ) : (
-                <div className="flex items-start gap-2.5 rounded-xl border border-amber-500/35 bg-amber-500/10 p-3.5 text-xs text-amber-200">
-                  <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-400" />
+                <div className="flex items-start gap-2.5 rounded-2xl border border-amber-200 bg-amber-50/85 p-3.5 text-xs text-amber-800">
+                  <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
                   <span>
                     {profile.role === 'teacher'
                       ? 'Bạn cần đăng ký mẫu giọng nói trước khi chạy Chấm hội thoại 1-1 hoặc Phân tích tiết dạy.'
@@ -218,11 +225,11 @@ export function ProfileView({ profile, gpuUrl, onProfileUpdated }: ProfileViewPr
               )}
 
               {profile.voice_sample_url && (
-                <div className="rounded-xl border border-white/10 bg-slate-950/60 p-3">
-                  <div className="mb-1.5 text-[11px] font-medium text-slate-400">
+                <div className="rounded-2xl border border-slate-200 bg-slate-50/80 p-3">
+                  <div className="mb-1.5 text-[11px] font-semibold text-slate-500">
                     Bản thu âm mẫu hiện tại:
                   </div>
-                  <audio controls src={profile.voice_sample_url} className="h-8 w-full" />
+                  <audio controls src={profile.voice_sample_url} className="h-9 w-full" />
                 </div>
               )}
             </div>
@@ -232,8 +239,8 @@ export function ProfileView({ profile, gpuUrl, onProfileUpdated }: ProfileViewPr
               onClick={() => setVoiceModalOpen(true)}
               className={`inline-flex w-full items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition ${
                 voiceReady
-                  ? 'border border-white/15 bg-white/5 text-slate-200 hover:bg-white/10'
-                  : 'bg-sky-600 text-white hover:bg-sky-500 shadow-lg shadow-sky-600/25'
+                  ? 'border border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100'
+                  : 'bg-indigo-600 text-white hover:bg-indigo-500 shadow-lg shadow-indigo-600/20'
               }`}
             >
               <Mic className="h-4 w-4" />

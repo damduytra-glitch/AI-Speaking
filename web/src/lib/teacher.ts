@@ -41,6 +41,83 @@ export async function fetchTeacherStats(teacherId: string) {
   return { studentCount, assessmentCount, questionSetsCount, avgScore };
 }
 
+export interface ClassSkillAnalytics {
+  avgAccuracy: number | null;
+  avgContext: number | null;
+  avgLexical: number | null;
+  avgGrammar: number | null;
+  distribution: {
+    excellent: number;
+    good: number;
+    fair: number;
+    needsWork: number;
+  };
+  totalRecords: number;
+}
+
+export async function fetchTeacherClassAnalytics(
+  teacherId: string,
+  studentIds: string[],
+): Promise<ClassSkillAnalytics> {
+  const client = getSupabaseClient();
+  const [assessRes, sessRes] = await Promise.all([
+    client
+      .from('assessments')
+      .select('score_total, score_accuracy, score_context, score_lexical, score_grammar')
+      .eq('teacher_id', teacherId)
+      .eq('saved', true),
+    studentIds.length > 0
+      ? client
+          .from('practice_sessions')
+          .select('score_total, score_accuracy, score_context, score_lexical, score_grammar')
+          .in('student_id', studentIds)
+          .in('status', ['completed', 'reviewed'])
+      : Promise.resolve({ data: [], error: null }),
+  ]);
+
+  type Row = {
+    score_total?: number | null;
+    score_accuracy?: number | null;
+    score_context?: number | null;
+    score_lexical?: number | null;
+    score_grammar?: number | null;
+  };
+
+  const rows: Row[] = [
+    ...((assessRes.data as Row[]) || []),
+    ...((sessRes.data as Row[]) || []),
+  ];
+
+  const avgOf = (vals: number[]) =>
+    vals.length > 0 ? vals.reduce((s, v) => s + v, 0) / vals.length : null;
+
+  const accList = rows
+    .filter((r) => (r.score_accuracy ?? r.score_total) != null)
+    .map((r) => Number(r.score_accuracy ?? r.score_total));
+  const ctxList = rows.filter((r) => r.score_context != null).map((r) => Number(r.score_context));
+  const lexList = rows.filter((r) => r.score_lexical != null).map((r) => Number(r.score_lexical));
+  const graList = rows.filter((r) => r.score_grammar != null).map((r) => Number(r.score_grammar));
+
+  const distribution = { excellent: 0, good: 0, fair: 0, needsWork: 0 };
+  for (const r of rows) {
+    if (r.score_total == null) continue;
+    const sc = Number(r.score_total);
+    if (sc >= 8) distribution.excellent += 1;
+    else if (sc >= 6.5) distribution.good += 1;
+    else if (sc >= 5) distribution.fair += 1;
+    else distribution.needsWork += 1;
+  }
+
+  return {
+    avgAccuracy: avgOf(accList),
+    avgContext: avgOf(ctxList),
+    avgLexical: avgOf(lexList),
+    avgGrammar: avgOf(graList),
+    distribution,
+    totalRecords: rows.length,
+  };
+}
+
 export async function fetchStudentAssessmentsForTeacher(studentId: string): Promise<Assessment[]> {
   const client = getSupabaseClient();
   const { data, error } = await client

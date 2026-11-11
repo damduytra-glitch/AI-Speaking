@@ -1,6 +1,7 @@
 'use client';
 
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { X } from 'lucide-react';
 
 interface ModalProps {
@@ -15,6 +16,9 @@ interface ModalProps {
   children: React.ReactNode;
 }
 
+// Track active stacked modals so closing a child modal doesn't prematurely unlock body scroll
+let activeModalCount = 0;
+
 export function Modal({
   open,
   onClose,
@@ -26,6 +30,12 @@ export function Modal({
   footer,
   children,
 }: ModalProps) {
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
   useEffect(() => {
     if (!open || !onClose || hideCloseButton) return;
     const handleKey = (e: KeyboardEvent) => {
@@ -37,18 +47,23 @@ export function Modal({
 
   useEffect(() => {
     if (!open) return;
-    const prevOverflow = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
+    activeModalCount += 1;
+    if (activeModalCount === 1) {
+      document.body.style.overflow = 'hidden';
+    }
     return () => {
-      document.body.style.overflow = prevOverflow;
+      activeModalCount = Math.max(0, activeModalCount - 1);
+      if (activeModalCount === 0) {
+        document.body.style.overflow = '';
+      }
     };
   }, [open]);
 
-  if (!open) return null;
+  if (!open || !mounted) return null;
 
-  return (
+  return createPortal(
     <div
-      className="fixed inset-0 z-[1050] flex items-center justify-center bg-slate-950/75 p-4 backdrop-blur-sm animate-fadein"
+      className="fixed inset-0 z-[1050] flex items-end sm:items-center justify-center bg-slate-900/40 p-0 sm:p-6 backdrop-blur-[6px] animate-fadein"
       onMouseDown={(e) => {
         if (closeOnBackdrop && onClose && e.target === e.currentTarget) {
           onClose();
@@ -58,19 +73,25 @@ export function Modal({
       aria-modal="true"
     >
       <div
-        className={`glass-modal flex max-h-[90vh] w-full flex-col overflow-hidden text-slate-100 ${maxWidthClass}`}
+        className={`glass-modal animate-sheet-in flex max-h-[92vh] sm:max-h-[88vh] w-full flex-col overflow-hidden rounded-t-3xl sm:rounded-3xl text-slate-900 ${maxWidthClass}`}
       >
+        <div className="mx-auto mt-2.5 h-1.5 w-11 shrink-0 rounded-full bg-slate-300/80 sm:hidden" />
+
         {(title || !hideCloseButton) && (
-          <div className="flex items-start justify-between gap-4 border-b border-white/10 px-6 py-4">
-            <div className="min-w-0">
-              {title && <h3 className="text-lg font-bold text-white leading-snug">{title}</h3>}
-              {subtitle && <div className="mt-1 text-xs text-slate-400">{subtitle}</div>}
+          <div className="flex shrink-0 items-start justify-between gap-4 border-b border-slate-100 bg-white/80 px-5 sm:px-6 py-4">
+            <div className="min-w-0 flex-1">
+              {title && (
+                <h3 className="text-base sm:text-lg font-bold text-slate-900 leading-snug">
+                  {title}
+                </h3>
+              )}
+              {subtitle && <div className="mt-0.5 text-xs text-slate-500">{subtitle}</div>}
             </div>
             {!hideCloseButton && onClose && (
               <button
                 type="button"
                 onClick={onClose}
-                className="rounded-lg p-1.5 text-slate-400 hover:bg-white/10 hover:text-white transition"
+                className="shrink-0 rounded-xl p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-700 active:scale-95 transition"
                 aria-label="Đóng"
               >
                 <X className="h-5 w-5" />
@@ -79,15 +100,17 @@ export function Modal({
           </div>
         )}
 
-        <div className="flex-1 overflow-y-auto px-6 py-5">{children}</div>
+        <div className="flex-1 overflow-y-auto overscroll-contain px-5 sm:px-6 py-4 sm:py-5">
+          {children}
+        </div>
 
         {footer && (
-          <div className="flex flex-wrap items-center justify-end gap-2.5 border-t border-white/10 px-6 py-4">
+          <div className="flex shrink-0 flex-wrap items-center justify-end gap-2.5 border-t border-slate-100 bg-slate-50/75 px-5 sm:px-6 py-3.5 pb-[max(0.875rem,env(safe-area-inset-bottom))] sm:pb-4">
             {footer}
           </div>
         )}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
-
