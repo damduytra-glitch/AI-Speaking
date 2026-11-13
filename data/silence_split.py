@@ -226,9 +226,10 @@ def export_diarization_clips(
     speaker_key: str,
     preprocess: Optional[PreprocessConfig] = None,
     *,
-    merge_gap_sec: float = 0.35,
-    min_duration_sec: float = 0.2,
+    merge_gap_sec: float = 1.2,
+    min_duration_sec: float = 0.6,
     prefix: str = "sent",
+    intervening_backchannel_max_sec: float = 0.85,
 ) -> List[Dict[str, Any]]:
     """Cut clips from original audio using ECAPA diarization time spans."""
     label_map = {
@@ -250,26 +251,64 @@ def export_diarization_clips(
     elif label == "Student":
         accepted_labels.add("Speaker B")
 
-    spans: List[tuple[float, float]] = []
-    for s in diarize_segments:
-        sp = getattr(s, "speaker", None)
-        if sp is None and isinstance(s, dict):
-            sp = s.get("speaker")
-        if sp not in accepted_labels:
-            continue
-        start = float(getattr(s, "start", 0) if not isinstance(s, dict) else s.get("start", 0))
-        end = float(getattr(s, "end", 0) if not isinstance(s, dict) else s.get("end", 0))
-        if end > start:
-            spans.append((start, end))
-    spans.sort()
+    distinct_speakers = {
+        getattr(s, "speaker", None) if not isinstance(s, dict) else s.get("speaker")
+        for s in diarize_segments
+    }
+    has_other_speaker = any(sp and sp not in accepted_labels for sp in distinct_speakers)
+
     merged: List[tuple[float, float]] = []
-    for start, end in spans:
-        if end <= start:
-            continue
-        if merged and start - merged[-1][1] <= merge_gap_sec:
-            merged[-1] = (merged[-1][0], max(merged[-1][1], end))
-        else:
-            merged.append((start, end))
+    if has_other_speaker:
+        # Dialogue-aware turn extraction:
+        # Intervening other-speaker segments of brief duration (<= intervening_backchannel_max_sec)
+        # are non-floor-holding backchannels (e.g. teacher saying 'wow', 'right') and do not break
+        # the target speaker's conversational turn if the target continues.
+        # But genuine questions/speech (> intervening_backchannel_max_sec) strictly break the turn.
+        blocks: List[Dict[str, Any]] = []
+        for s in diarize_segments:
+            sp = getattr(s, "speaker", None) if not isinstance(s, dict) else s.get("speaker")
+            is_target = sp in accepted_labels
+            start = float(getattr(s, "start", 0) if not isinstance(s, dict) else s.get("start", 0))
+            end = float(getattr(s, "end", 0) if not isinstance(s, dict) else s.get("end", 0))
+            if end <= start:
+                continue
+            dur = end - start
+            if not is_target and dur <= intervening_backchannel_max_sec and blocks and blocks[-1]["is_target"]:
+                continue
+            if not blocks or blocks[-1]["is_target"] != is_target:
+                blocks.append({"is_target": is_target, "spans": [(start, end)]})
+            else:
+                blocks[-1]["spans"].append((start, end))
+
+        for block in blocks:
+            if not block["is_target"]:
+                continue
+            block_merged: List[tuple[float, float]] = []
+            for start, end in block["spans"]:
+                if block_merged and (start - block_merged[-1][1]) <= merge_gap_sec:
+                    block_merged[-1] = (block_merged[-1][0], max(block_merged[-1][1], end))
+                else:
+                    block_merged.append((start, end))
+            merged.extend(block_merged)
+    else:
+        # Single speaker mode: merge consecutive spans by gap
+        spans: List[tuple[float, float]] = []
+        for s in diarize_segments:
+            sp = getattr(s, "speaker", None) if not isinstance(s, dict) else s.get("speaker")
+            if sp is not None and sp not in accepted_labels:
+                continue
+            start = float(getattr(s, "start", 0) if not isinstance(s, dict) else s.get("start", 0))
+            end = float(getattr(s, "end", 0) if not isinstance(s, dict) else s.get("end", 0))
+            if end > start:
+                spans.append((start, end))
+        spans.sort()
+        for start, end in spans:
+            if end <= start:
+                continue
+            if merged and start - merged[-1][1] <= merge_gap_sec:
+                merged[-1] = (merged[-1][0], max(merged[-1][1], end))
+            else:
+                merged.append((start, end))
 
     preprocess = preprocess or PreprocessConfig()
     track_preprocess = replace(preprocess, denoise=False)

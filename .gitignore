@@ -81,10 +81,5 @@ Thumbs.db
 desktop.ini
 .vscode/
 .idea/
-
-.DS_Store
-Thumbs.db
-desktop.ini
-.vscode/
-.idea/
 output/
+scratch/

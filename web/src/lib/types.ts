@@ -91,6 +91,7 @@ export interface PronunciationScores {
   grammar?: number | null;
   context?: number | null;
   lexical?: number | null;
+  overall?: number | null;
 }
 
 export interface GrammarErrorItem {

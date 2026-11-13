@@ -29,11 +29,12 @@ inference:
   max_upload_mb: 300
 
 asr:
-  model_name: openai/whisper-large-v3
+  engine: qwen3  # Qwen3-ASR (Qwen/Qwen3-ASR-1.7B-hf): chuẩn xác, triệt tiêu ảo giác, có chấm phẩy và chữ thường/hoa
+  model_name: Qwen/Qwen3-ASR-1.7B-hf
   language: en
   device: cuda
   torch_dtype: float16
-  max_new_tokens: 440
+  max_new_tokens: 128
   lang_id:
     enabled: false
     drop_languages: [vi, vie, vietnamese]
@@ -41,11 +42,11 @@ asr:
     text_vi_regex: false
 
 eligibility:
-  min_duration_sec: 1.0
+  min_duration_sec: 0.8
   min_words: 2
   backchannel_words:
-    - yes
-    - no
+    - 'yes'
+    - 'no'
     - yeah
     - yep
     - ok
@@ -55,6 +56,11 @@ eligibility:
     - um
     - ah
     - hmm
+    - mmm
+    - mm
+    - erm
+    - er
+    - mhm
     - right
     - alright
     - oh
@@ -108,27 +114,60 @@ scorer:
     word_total: 0.25
     phoneme_accuracy: 0.25
   phoneme_low_threshold: 1.2
+
+  # Hiệu chuẩn âm học cơ sở (WavLM-Large + LoRA + GATv2)
   calibration:
     enabled: true
-    slope: 1.20
-    offset: -2.80
+    slope: 1.0
+    offset: 0.0
     short_duration_sec: 3.5
-    short_duration_factor: 0.40
+    short_duration_factor: 0.20
     long_duration_sec: 4.0
     long_duration_factor: 0.05
     long_duration_max_boost: 0.4
     phone_slope: 6.0
     phone_offset: -3.0
 
+  # Hiệu chuẩn điểm Phát âm (Pronunciation - PR) theo chuẩn khảo thí thực tế
+  pronunciation_calibration:
+    enabled: true
+    w_acc: 0.8655
+    w_flu: 0.0767
+    w_pro: -0.3757
+    bias: 3.1879
+    min_score: 1.0
+    max_score: 9.5
+
+  # Tham số trừ điểm chẩn đoán âm vị L2-MDD (ASHA)
+  l2_mdd_penalty:
+    enabled: true
+    pen_bad: 0.04
+    pen_warning: 0.015
+    max_penalty: 0.35
+
+  # Barem quy đổi 4 trụ cột IELTS Speaking (FC, LR, GRA) từ điểm âm học thực nghiệm
+  ielts_calibration:
+    enabled: true
+    fc:
+      slope: 0.1890
+      bias: 5.5574
+    lr:
+      slope: 0.2162
+      bias: 5.4123
+    gra:
+      slope: 0.6774
+      bias: 2.4684
+
 sentence_split:
   min_silence_sec: 0.35
   silence_thresh_db: -40
-  min_segment_sec: 0.2
+  min_segment_sec: 0.6
   max_segment_sec: 12.0
   padding_sec: 0.1
   trim_edges: false
   trim_min_sec: 0.05
-  diarization_merge_gap_sec: 0.2
+  diarization_merge_gap_sec: 1.2
+  intervening_backchannel_max_sec: 0.85
 
 diarization:
   vad_threshold_db: -42.0

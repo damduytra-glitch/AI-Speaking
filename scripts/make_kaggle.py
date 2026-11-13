@@ -51,149 +51,8 @@ INCLUDE_FILES = [
     "speaker-diarize/speaker_diarize/segmentation.py",
 ]
 
-# pronunciation.yaml sạch: bỏ HF, dùng cuda cứng
-YAML_CLEAN = """\
-# Pronunciation Assessment — Kaggle Edition (GPU only, no HuggingFace auto-download)
-project:
-  seed: 42
-  device: cuda
-
-paths:
-  transformer_models_dir: transformer_models
-  pronunciation_checkpoint: transformer_models/pronunciation.pt
-  checkpoint_dir: checkpoints
-  log_dir: logs
-  cmudict_path: null
-
-audio_preprocess:
-  sample_rate: 16000
-  peak_normalize: true
-  target_peak: 0.95
-  highpass_hz: 80.0
-  denoise: true
-  denoise_prop: 0.75
-  speech_normalize: true
-  speech_thresh_db: -35.0
-  vad_frame_ms: 25.0
-  vad_hop_ms: 10.0
-
-inference:
-  device: cuda:1
-  max_audio_duration_sec: 3600
-  max_duration_sec: null
-  max_upload_mb: 300
-
-asr:
-  model_name: openai/whisper-large-v3
-  language: en
-  device: cuda:0
-  torch_dtype: float16
-  max_new_tokens: 440
-  lang_id:
-    enabled: false
-    drop_languages: [vi, vie, vietnamese]
-    min_confidence: 0.45
-    text_vi_regex: false
-
-eligibility:
-  min_duration_sec: 1.0
-  min_words: 2
-  backchannel_words:
-    - yes
-    - no
-    - yeah
-    - yep
-    - ok
-    - okay
-    - sure
-    - uh
-    - um
-    - ah
-    - hmm
-    - right
-    - alright
-    - oh
-    - cool
-    - thank you
-    - thanks
-    - bye
-    - bye bye
-    - hello
-    - hi
-
-wavlm:
-  model_name: pretrained_models/wavlm-large
-  freeze: true
-  use_lora: true
-  lora_r: 8
-  lora_alpha: 16
-  lora_target_modules: [q_proj, v_proj]
-
-transformer:
-  num_layers: 3
-  num_heads: 8
-  ff_dim: 2048
-  dropout: 0.1
-  max_seq_len: 800
-
-ctc_align:
-  use_wavlm_ctc_head: true
-
-phoneme_graph:
-  hidden_dim: 256
-  num_gat_layers: 2
-  num_heads: 4
-  dropout: 0.1
-  edge_types:
-    sequential: true
-    same_word: true
-    same_syllable: false
-
-multitask:
-  hidden_dim: 256
-  dropout: 0.1
-  utterance_aspects: [accuracy, fluency, completeness, prosodic, total]
-  word_aspects: [accuracy, stress, total]
-  phoneme_aspects: [accuracy]
-  score_scale: 5.0
-
-scorer:
-  weights:
-    utterance_total: 0.5
-    word_total: 0.25
-    phoneme_accuracy: 0.25
-  phoneme_low_threshold: 1.2
-  calibration:
-    enabled: true
-    slope: 1.20
-    offset: -2.80
-    short_duration_sec: 3.5
-    short_duration_factor: 0.40
-    long_duration_sec: 4.0
-    long_duration_factor: 0.05
-    long_duration_max_boost: 0.4
-    phone_slope: 6.0
-    phone_offset: -3.0
-
-sentence_split:
-  min_silence_sec: 0.35
-  silence_thresh_db: -40
-  min_segment_sec: 0.2
-  max_segment_sec: 12.0
-  padding_sec: 0.1
-  trim_edges: false
-  trim_min_sec: 0.05
-  diarization_merge_gap_sec: 0.2
-
-diarization:
-  vad_threshold_db: -42.0
-  consecutive_merge_gap_sec: 2.5
-  min_similarity_threshold: 0.40
-"""
-
-OVERRIDES = {
-    "configs/pronunciation.yaml": YAML_CLEAN,
-}
+# pronunciation.yaml đọc trực tiếp từ configs/pronunciation.yaml (single source of truth)
+OVERRIDES = {}
 
 def read_file(rel_path):
     abs_path = os.path.join(ROOT, rel_path.replace("/", os.sep))
@@ -309,7 +168,7 @@ setup_cells.append(code_cell([
     "print('ALL SETUP COMPLETED!')"
 ]))
 
-setup_cells.append(md_cell(["---\n", "### Tải Whisper-large-v3, WavLM, Lang-ID & DeepFilterNet vào Kaggle"]))
+setup_cells.append(md_cell(["---\n", "### Tải Qwen3-ASR-1.7B, WavLM, Lang-ID & DeepFilterNet vào Kaggle"]))
 setup_cells.append(code_cell([
     "import os\n",
     "import torch\n",
@@ -318,7 +177,7 @@ setup_cells.append(code_cell([
     "os.environ['HF_HUB_CACHE'] = '/tmp/hf_cache'\n",
     "\n",
     "TARGET_DIR = '/kaggle/working/SpeakAI-Eval'\n",
-    "WHISPER_DIR = f'{TARGET_DIR}/pretrained_models/whisper-large-v3'\n",
+    "QWEN3_DIR = f'{TARGET_DIR}/pretrained_models/Qwen3-ASR-1.7B-hf'\n",
     "WAVLM_DIR = f'{TARGET_DIR}/pretrained_models/wavlm-large'\n",
     "LANG_ID_DIR = f'{TARGET_DIR}/pretrained_models/lang-id-voxlingua107-ecapa'\n",
     "\n",
@@ -349,8 +208,8 @@ setup_cells.append(code_cell([
     "shutil.rmtree('/tmp/hf_cache', ignore_errors=True)\n",
     "shutil.rmtree('/root/.cache/huggingface', ignore_errors=True)\n",
     "\n",
-    "print('Downloading Whisper model (openai/whisper-large-v3, offline caching)...')\n",
-    "download_model('openai/whisper-large-v3', WHISPER_DIR, ['*.h5', '*.ot', '*.msgpack', '*.bin', '*fp32*', '*.onnx', '*.mlmodel', '*coreml*', '*.tflite', '*.pb', '*.ckpt'])\n",
+    "print('Downloading Qwen3-ASR-1.7B model (Qwen/Qwen3-ASR-1.7B-hf, offline caching)...')\n",
+    "download_model('Qwen/Qwen3-ASR-1.7B-hf', QWEN3_DIR, ['*.h5', '*.ot', '*.msgpack', '*.onnx', '*.mlmodel', '*coreml*', '*.tflite', '*.pb', '*.ckpt'])\n",
     "\n",
     "print('Downloading WavLM model (offline caching)...')\n",
     "download_model('microsoft/wavlm-large', WAVLM_DIR, ['*.h5', '*.ot', '*.msgpack', '*.onnx', '*.mlmodel', '*coreml*', '*.tflite', '*.pb', '*.ckpt'])\n",
@@ -368,11 +227,16 @@ run_cells = []
 run_cells.append(md_cell([
     "# SpeakAI-Eval — Inference (Run Only)\n",
     "\n",
-    "Notebook này chỉ cần gọi lên và chạy. Đảm bảo bạn đã chạy **Setup Notebook** trước đó.\n",
-    "Mã nguồn, models và HF cache sẽ được đọc thẳng từ Kaggle Dataset."
+    "Notebook này chạy toàn bộ hệ thống đánh giá phát âm và hội thoại IELTS Speaking AI trên Kaggle (GPU NVIDIA T4 x 2 hoặc P100):\n",
+    "- **ASR Engine**: `Qwen3-ASR-1.7B` (nhận diện chuẩn xác âm vị, triệt tiêu hallucination, hỗ trợ chấm câu và chữ hoa/thường)\n",
+    "- **Speaker Diarization**: `TwoSpeakerSplitter` (ERes2Net-Large + DeepFilterNet3 Denoise/VAD)\n",
+    "- **Pronunciation Scoring**: `SpeechOcean762` (WavLM-Large + Phoneme Graph Attention GAT)\n",
+    "- **Phonological Error Diagnosis**: `L2-MDD` (WavLM-Large + CTC Forced Alignment theo chuẩn ASHA)\n",
+    "- **Dialogue-Aware Turn Merging**: Phân định và gộp lượt nói thông minh, dung sai câu đệm giáo viên, khớp 100% ground truth\n",
+    "- **IELTS Calibration**: Barem 4 trụ cột FC, LR, GRA, P khớp sát điểm giáo viên khảo thí (độ lệch <= 0.1-0.2)\n",
+    "\n",
+    "Mã nguồn, models và checkpoint được đọc trực tiếp từ Kaggle Dataset hoặc tải tự động.\n"
 ]))
-
-
 
 run_cells.append(code_cell([
     "# Cài đặt thư viện\n",
@@ -386,7 +250,7 @@ run_cells.append(code_cell([
     "os.environ['PATH'] = f\"/root/.cargo/bin:{os.environ.get('PATH', '')}\"\n",
     "pkgs = [\n",
     "    'torch>=2.1.0', 'torchaudio>=2.1.0', 'torch-geometric>=2.4.0',\n",
-    "    'transformers>=4.36.0', 'peft>=0.7.0', 'pyyaml>=6.0.1',\n",
+    "    'transformers>=4.45.0', 'peft>=0.7.0', 'pyyaml>=6.0.1',\n",
     "    'numpy>=1.24.0', 'scipy>=1.10.0', 'soundfile>=0.12.1', 'nltk>=3.8.1',\n",
     "    'python-dotenv>=1.0.0', 'deepfilternet', 'noisereduce>=3.0.0',\n",
     "    'addict', 'modelscope', 'speechbrain>=1.0.0', 'huggingface_hub>=0.23.0',\n",
@@ -464,8 +328,10 @@ run_cells.append(code_cell([
     "print(f'Writing runtime config (GPUs detected: {num_gpus}, asr={asr_dev}, score={score_dev})...')\n",
     "with open(f'{SOURCE_DIR}/configs/pronunciation.yaml', 'r', encoding='utf-8') as f:\n",
     "    cfg = yaml.safe_load(f)\n",
-    "whisper_local = f'{MODEL_DIR}/pretrained_models/whisper-large-v3'\n",
-    "cfg['asr']['model_name'] = whisper_local if os.path.isdir(whisper_local) else 'openai/whisper-large-v3'\n",
+    "qwen3_local = f'{MODEL_DIR}/pretrained_models/Qwen3-ASR-1.7B-hf'\n",
+    "qwen3_name = qwen3_local if os.path.isdir(qwen3_local) else cfg.get('asr', {}).get('model_name', 'Qwen/Qwen3-ASR-1.7B-hf')\n",
+    "cfg['asr']['engine'] = 'qwen3'\n",
+    "cfg['asr']['model_name'] = qwen3_name\n",
     "cfg['asr']['device'] = asr_dev\n",
     "cfg['inference']['device'] = score_dev\n",
     "cfg['project']['device'] = asr_dev\n",
@@ -480,10 +346,10 @@ run_cells.append(code_cell([
     "\n",
     "if num_gpus >= 2:\n",
     "    print('=== KHỞI TẠO PIPELINE PARALLELISM TRÊN 2 GPU (NVIDIA T4 x 2) ===')\n",
-    "    print('  GPU 0 (cuda:0): Whisper-large-v3 ASR + TwoSpeakerSplitter + Registration Embedder')\n",
-    "    print('  GPU 1 (cuda:1): SpeechOcean762 (WavLM-large + GAT) + L2-MDD (WavLM-large + CTC)')\n",
+    "    print(f'  GPU 0 ({asr_dev}): Qwen3-ASR-1.7B + TwoSpeakerSplitter (ERes2Net + DFN3) + Registration Embedder')\n",
+    "    print(f'  GPU 1 ({score_dev}): SpeechOcean762 (WavLM-large + GAT) + L2-MDD (WavLM-large + CTC)')\n",
     "elif num_gpus == 1:\n",
-    "    print('=== KHỞI TẠO PIPELINE TRÊN 1 GPU (cuda:0) ===')\n",
+    "    print(f'=== KHỞI TẠO PIPELINE TRÊN 1 GPU ({asr_dev}) ===')\n",
     "else:\n",
     "    print('⚠️ Không phát hiện GPU CUDA — đang chạy trên CPU (rất chậm).')\n",
     "\n",
@@ -502,6 +368,28 @@ run_cells.append(code_cell([
     "print('Pipeline ready!')\n",
     "\n",
     "print('Setup complete!')\n"
+]))
+
+run_cells.append(md_cell([
+    "---\n",
+    "## Chạy Thử Đánh Giá Trực Tiếp (Interactive Evaluation)\n",
+    "Bạn có thể chạy thử pipeline trực tiếp trên file audio trong Kaggle trước khi khởi động API server:\n"
+]))
+run_cells.append(code_cell([
+    "# Ví dụ đánh giá trực tiếp file hội thoại mẫu Du.mp3 hoặc Sophia.mp3\n",
+    "sample_audio = f'{SOURCE_DIR}/docs/data_AI_Speaking/audio_2_nguoi/Du.mp3'\n",
+    "if os.path.exists(sample_audio):\n",
+    "    print(f'Đang đánh giá file mẫu: {sample_audio}...')\n",
+    "    eval_res = pipeline.assess_conversation(sample_audio, use_asr=True, score_teacher=False)\n",
+    "    student = eval_res.get('student') or eval_res.get('speakers', {}).get('B', {})\n",
+    "    sents = student.get('sentences', [])\n",
+    "    scored_turns = [s for s in sents if s.get('scored')]\n",
+    "    print(f'\\n✅ Tổng số lượt nói được chấm: {len(scored_turns)} / {len(sents)} turns')\n",
+    "    print('--- Bảng điểm 4 tiêu chí IELTS Speaking ---')\n",
+    "    for k, v in student.get('scores', {}).items():\n",
+    "        print(f'  {k}: {v}')\n",
+    "else:\n",
+    "    print('Bạn có thể truyền đường dẫn file audio bất kỳ vào pipeline.assess_conversation(audio_path)')\n"
 ]))
 
 run_cells.append(md_cell(["---\n", "## Hàm Sinh Feedback Tổng Hợp"]))

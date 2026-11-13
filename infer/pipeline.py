@@ -26,9 +26,21 @@ SCORE_KEYS = ("accuracy", "fluency", "prosodic", "total")
 
 DEFAULT_BACKCHANNELS = frozenset({
     "yes", "no", "yeah", "yep", "ok", "okay", "sure", "uh", "um", "ah", "hmm",
+    "mmm", "mm", "erm", "er", "mhm", "huh",
     "right", "alright", "oh", "cool", "thank you", "thanks", "bye", "bye bye",
     "hello", "hi", "goodbye", "fine", "yup",
 })
+
+INCOMPLETE_CONNECTORS = frozenset({
+    "is", "are", "was", "were", "my", "the", "a", "an", "and", "or", "because", "like", "for",
+})
+
+
+def _is_incomplete_turn(transcript: str) -> bool:
+    words = [w.lower().strip() for w in re.sub(r"[^\w\s']", " ", transcript).split() if w.strip()]
+    if not words:
+        return False
+    return words[-1] in INCOMPLETE_CONNECTORS
 
 
 def check_scoring_eligibility(
@@ -44,11 +56,11 @@ def check_scoring_eligibility(
         return False, "empty_transcript"
 
     cfg = config or {}
-    min_duration = float(cfg.get("min_duration_sec", 1.0))
+    min_duration = float(cfg.get("min_duration_sec", 0.8))
     min_words = int(cfg.get("min_words", 2))
     raw_backchannels = cfg.get("backchannel_words")
     if raw_backchannels:
-        backchannels = frozenset(w.lower().strip() for w in raw_backchannels)
+        backchannels = frozenset(str(w).lower().strip() for w in raw_backchannels)
     else:
         backchannels = DEFAULT_BACKCHANNELS
 
@@ -63,11 +75,13 @@ def check_scoring_eligibility(
     if norm_phrase in backchannels:
         return False, "short_backchannel"
 
-    # Or each individual word is a backchannel/filler token (e.g. "oh yeah", "yes ok")
+    # Or each individual word is a backchannel/filler token (e.g. "oh yeah", "yes ok", "mmm")
     if all(w in backchannels for w in clean_words):
         return False, "short_backchannel"
 
-    # 2. Utterance is too short in duration and has too few content words
+    # 2. Utterance is too short in duration (aborted false starts < 0.8s) or too few content words
+    if duration_sec > 0 and duration_sec < 0.8:
+        return False, "too_short"
     if duration_sec > 0 and duration_sec < min_duration and len(clean_words) < min_words:
         return False, "too_short"
 
@@ -169,6 +183,7 @@ def _build_summary(
     sentences: List[Dict[str, Any]],
     *,
     filtered_vi: int = 0,
+    config: Optional[Dict[str, Any]] = None,
     **_ignored: Any,
 ) -> Dict[str, Any]:
     summary_scores = _avg_scores(sentences)
@@ -179,6 +194,37 @@ def _build_summary(
     scored_count = sum(1 for s in sentences if s.get("scored") is True)
     vi_count = sum(1 for s in sentences if s.get("is_vietnamese") is True or s.get("language") == "vi")
     unscored_count = len(sentences) - scored_count
+
+    # ── Calculate benchmark-calibrated IELTS 4 pillars & Overall from config ──
+    if scored_count > 0:
+        cfg = config or {}
+        ielts_cfg = cfg.get("ielts_calibration") or {}
+        fc_cfg = ielts_cfg.get("fc") or {}
+        lr_cfg = ielts_cfg.get("lr") or {}
+        gra_cfg = ielts_cfg.get("gra") or {}
+
+        fc_slope = float(fc_cfg.get("slope", 0.1890))
+        fc_bias = float(fc_cfg.get("bias", 5.5574))
+        lr_slope = float(lr_cfg.get("slope", 0.2162))
+        lr_bias = float(lr_cfg.get("bias", 5.4123))
+        gra_slope = float(gra_cfg.get("slope", 0.6774))
+        gra_bias = float(gra_cfg.get("bias", 2.4684))
+
+        acc = summary_scores.get("accuracy", 7.0)
+
+        fc = round(max(1.0, min(9.0, fc_slope * acc + fc_bias)), 1)
+        lr = round(max(1.0, min(9.0, lr_slope * acc + lr_bias)), 1)
+        gra = round(max(1.0, min(9.0, gra_slope * acc + gra_bias)), 1)
+        pr = summary_scores.get("total", acc)
+        overall = round((pr + fc + lr + gra) / 4.0, 1)
+
+        summary_scores["context"] = fc
+        summary_scores["lexical"] = lr
+        summary_scores["grammar"] = gra
+        summary_scores["overall"] = overall
+        summary_scores["score_fluency_coherence"] = fc
+        summary_scores["score_lexical"] = lr
+        summary_scores["score_grammar"] = gra
 
     return {
         "sentence_count": len(sentences),
@@ -339,7 +385,7 @@ class SpeakingPipeline:
         split_cfg = self.config.get("sentence_split") or {}
         track_preprocess = PreprocessConfig.from_dict(self.config.get("audio_preprocess"))
         track_preprocess.denoise = False
-        merge_gap = float(split_cfg.get("diarization_merge_gap_sec", 0.2))
+        merge_gap = float(split_cfg.get("diarization_merge_gap_sec", 1.2))
 
         segments = export_diarization_clips(
             source_audio,
@@ -348,42 +394,68 @@ class SpeakingPipeline:
             speaker,
             track_preprocess,
             merge_gap_sec=merge_gap,
-            min_duration_sec=float(split_cfg.get("min_segment_sec", 0.2)),
+            min_duration_sec=float(split_cfg.get("min_segment_sec", 0.6)),
             prefix=f"{speaker.lower()}_turn",
+            intervening_backchannel_max_sec=float(split_cfg.get("intervening_backchannel_max_sec", 0.85)),
         )
         return segments
 
-    @staticmethod
+    @classmethod
     def calibrate_scores_with_phonemes(
+        cls,
         pron_scores: Dict[str, Any],
         words_detail: List[Dict[str, Any]],
+        config: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
-        """Calibrate Accuracy and Total downward when L2-MDD detects critical/warning phoneme errors."""
+        """Calibrate acoustic scores to human teacher benchmark scale (IELTS/Cambridge Speaking)
+        with gentle L2-MDD phonological diagnostic fine-tuning.
+        All weights and penalties are loaded from config (scorer.pronunciation_calibration and scorer.l2_mdd_penalty)."""
         calibrated = dict(pron_scores)
-        if not words_detail:
-            return calibrated
 
-        num_crit = 0
-        num_warn = 0
-        for w in words_detail:
-            for ph in w.get("phonemes") or w.get("phones") or []:
-                st = ph.get("status")
-                if st == "bad":
-                    num_crit += 1
-                elif st == "warning":
-                    num_warn += 1
+        base_acc = float(pron_scores.get("accuracy", 6.5))
+        base_flu = float(pron_scores.get("fluency", 7.5))
+        base_pro = float(pron_scores.get("prosodic", 7.5))
 
-        if num_crit > 0 or num_warn > 0:
-            # Mỗi âm vị phát âm sai nghiêm trọng trừ 0.55; cảnh báo trừ 0.20 (tối đa trừ 4.0 điểm)
-            pen = min(4.0, num_crit * 0.55 + num_warn * 0.20)
-            base_acc = float(pron_scores.get("accuracy", 7.0))
-            calibrated_acc = max(1.5, round(base_acc - pen, 2))
-            calibrated["accuracy"] = calibrated_acc
+        cfg = config or {}
+        p_cfg = cfg.get("pronunciation_calibration") or cfg.get("calibration") or {}
+        enabled = p_cfg.get("enabled", True)
 
-            flu = float(pron_scores.get("fluency", 7.0))
-            pro = float(pron_scores.get("prosodic", 7.0))
-            calibrated["total"] = max(1.5, round(0.50 * calibrated_acc + 0.30 * flu + 0.20 * pro, 2))
+        if enabled:
+            w_acc = float(p_cfg.get("w_acc", 0.8655))
+            w_flu = float(p_cfg.get("w_flu", 0.0767))
+            w_pro = float(p_cfg.get("w_pro", -0.3757))
+            bias = float(p_cfg.get("bias", 3.4079))
+            calibrated_p = w_acc * base_acc + w_flu * base_flu + w_pro * base_pro + bias
+        else:
+            calibrated_p = base_acc
 
+        # L2-MDD diagnostic fine-tuning
+        pen_cfg = cfg.get("l2_mdd_penalty") or p_cfg.get("l2_mdd_penalty") or {}
+        pen_enabled = pen_cfg.get("enabled", True)
+        if pen_enabled and words_detail:
+            num_crit = 0
+            num_warn = 0
+            for w in words_detail:
+                for ph in w.get("phonemes") or w.get("phones") or []:
+                    st = ph.get("status")
+                    if st == "bad":
+                        num_crit += 1
+                    elif st == "warning":
+                        num_warn += 1
+
+            if num_crit > 0 or num_warn > 0:
+                pen_bad = float(pen_cfg.get("pen_bad", 0.04))
+                pen_warn = float(pen_cfg.get("pen_warning", 0.015))
+                max_pen = float(pen_cfg.get("max_penalty", 0.35))
+                pen = min(max_pen, num_crit * pen_bad + num_warn * pen_warn)
+                calibrated_p -= pen
+
+        min_val = float(p_cfg.get("min_score", 1.0)) if enabled else 1.0
+        max_val = float(p_cfg.get("max_score", 9.5)) if enabled else 10.0
+        calibrated_p = round(max(min_val, min(max_val, calibrated_p)), 2)
+        calibrated["accuracy"] = calibrated_p
+        calibrated["total"] = calibrated_p
+        calibrated["pronunciation"] = calibrated_p
         return calibrated
 
     def _process_segment(
@@ -552,7 +624,9 @@ class SpeakingPipeline:
             words_detail = pron_result.get("words_detail") or []
 
         # ── Hiệu chuẩn & Phân hóa điểm số dựa trên lỗi âm vị thực tế từ L2-MDD ──
-        final_scores = self.calibrate_scores_with_phonemes(pron_scores, words_detail)
+        final_scores = self.calibrate_scores_with_phonemes(
+            pron_scores, words_detail, config=self.config.get("scorer")
+        )
 
         # Generate per-turn feedback
         transformer_feedback = PronunciationScorer.generate_transformer_feedback(
@@ -623,6 +697,54 @@ class SpeakingPipeline:
             if item:
                 sentences.append(item)
 
+        # Merge consecutive incomplete turns split by teacher prompts (e.g. 'My favorite drink is...' + prompt + 'Coca-Cola')
+        merged_sentences: List[Dict[str, Any]] = []
+        i = 0
+        while i < len(sentences):
+            curr = sentences[i]
+            if (
+                i + 1 < len(sentences)
+                and curr.get("scored")
+                and _is_incomplete_turn(curr.get("transcript", ""))
+            ):
+                nxt = sentences[i + 1]
+                gap = nxt.get("start_sec", 0) - curr.get("end_sec", 0)
+                if 0 <= gap <= 3.5 and nxt.get("scored"):
+                    try:
+                        s_time = curr["start_sec"]
+                        e_time = nxt["end_sec"]
+                        comb_path = output_dir / f"merged_turn_{curr['index']:03d}_{nxt['index']:03d}.wav"
+                        from data.audio_preprocess import load_waveform, save_audio_file, PreprocessConfig
+                        p_cfg = PreprocessConfig.from_dict(self.config.get("audio_preprocess"))
+                        p_cfg.denoise = False
+                        wav = load_waveform(source_audio, p_cfg)
+                        sr = p_cfg.sample_rate
+                        mono = wav if wav.dim() == 1 else wav.mean(0)
+                        s_samp = max(0, int(s_time * sr))
+                        e_samp = min(mono.shape[0], int(e_time * sr))
+                        clip = mono[s_samp:e_samp].contiguous().unsqueeze(0)
+                        save_audio_file(comb_path, clip, sr)
+
+                        comb_seg = {
+                            "index": curr["index"],
+                            "start_sec": s_time,
+                            "end_sec": e_time,
+                            "duration_sec": round((e_samp - s_samp) / sr, 3),
+                            "path": str(comb_path),
+                        }
+                        comb_item, _ = self._process_segment(
+                            comb_seg, use_asr=use_asr, lang=lang, score=score, role=role,
+                        )
+                        if comb_item:
+                            merged_sentences.append(comb_item)
+                            i += 2
+                            continue
+                    except Exception as me:
+                        print(f"[{role}] Turn merge notice: {me}", flush=True)
+            merged_sentences.append(curr)
+            i += 1
+        sentences = merged_sentences
+
         if not sentences and use_asr:
             print(f"[{role}] Không có lượt nói hợp lệ sau ASR ({len(segments)} turn, {filtered_vi} đoạn tiếng Việt)", flush=True)
             return {
@@ -641,6 +763,7 @@ class SpeakingPipeline:
         summary = _build_summary(
             sentences,
             filtered_vi=filtered_vi,
+            config=self.config.get("scorer"),
         )
         return {
             "role": role,
@@ -689,11 +812,13 @@ class SpeakingPipeline:
             teacher_segs = split.get("teacher_segments") or []
             student_segs = split.get("student_segments") or []
             
+            all_segs = split.get("segments") or []
+            
             teacher = self._assess_speaker_sentences(
                 output_dir=teacher_dir,
                 speaker="Teacher",
                 source_audio=audio,
-                diarize_segments=teacher_segs,
+                diarize_segments=all_segs if all_segs else teacher_segs,
                 use_asr=use_asr,
                 feedback=False,
                 lang=lang,
@@ -704,7 +829,7 @@ class SpeakingPipeline:
                 output_dir=student_dir,
                 speaker="Student",
                 source_audio=audio,
-                diarize_segments=student_segs,
+                diarize_segments=all_segs if all_segs else student_segs,
                 use_asr=use_asr,
                 feedback=False,
                 lang=lang,
@@ -716,6 +841,7 @@ class SpeakingPipeline:
                 lang_fb = _build_summary(
                     student["sentences"],
                     filtered_vi=student.get("filtered_vi_count", 0),
+                    config=self.config.get("scorer"),
                 )
                 student["feedback"] = lang_fb["feedback"]
                 student["feedback_source"] = lang_fb["feedback_source"]

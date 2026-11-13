@@ -390,11 +390,11 @@ export function TeacherAssessView({
 
     const sScores = analysisResult.student?.scores;
     return {
-      total: Number(aiEval?.score_total ?? sScores?.total ?? 0),
+      total: Number(aiEval?.score_total ?? sScores?.overall ?? sScores?.total ?? 0),
       pr: Number(sScores?.accuracy ?? sScores?.total ?? 0),
-      fc: aiEval?.score_fluency_coherence ?? aiEval?.score_context ?? null,
-      lr: aiEval?.score_lexical ?? null,
-      gra: aiEval?.score_grammar ?? null,
+      fc: aiEval?.score_fluency_coherence ?? aiEval?.score_context ?? sScores?.context ?? null,
+      lr: aiEval?.score_lexical ?? sScores?.lexical ?? null,
+      gra: aiEval?.score_grammar ?? sScores?.grammar ?? null,
     };
   }, [analysisResult, aiEval, speakerView]);
 
