@@ -28,6 +28,19 @@ try:
     import numpy as np
 except ImportError:  # pragma: no cover
     np = None  # type: ignore[assignment]
+
+try:
+    import types
+    import torchaudio
+    if not hasattr(torchaudio, "backend"):
+        torchaudio.backend = types.ModuleType("torchaudio.backend")
+    if not hasattr(torchaudio.backend, "common"):
+        torchaudio.backend.common = types.ModuleType("torchaudio.backend.common")
+        torchaudio.backend.common.AudioMetaData = getattr(
+            torchaudio, "AudioMetaData", type("AudioMetaData", (), {})
+        )
+except Exception:
+    pass
 import requests
 import uvicorn
 from fastapi import BackgroundTasks, Depends, FastAPI, File, Form, Header, HTTPException, Request, UploadFile
@@ -109,24 +122,21 @@ def start_cloudflare_tunnel(port: int = 8000, timeout_sec: float = 35.0) -> Opti
 
 
 def _update_supabase_url(public_url: str) -> None:
-    """Push the tunnel URL to Supabase global_settings using Service Role Key (RLS-safe)."""
-    supabase_url, service_key = get_supabase_service_config()
-    if not service_key:
-        supabase_url, fallback_key = get_supabase_config()
-        if fallback_key:
-            print("⚠️ Thiếu SUPABASE_SERVICE_ROLE_KEY — với RLS đang bật, hãy thêm SUPABASE_SERVICE_ROLE_KEY vào .env / Kaggle Secrets.")
-        service_key = fallback_key
+    """Push the tunnel URL to Supabase global_settings."""
+    supabase_url, key = get_supabase_service_config()
+    if not key:
+        supabase_url, key = get_supabase_config()
 
-    if not supabase_url or not service_key:
-        print("⚠️ Thiếu SUPABASE_URL hoặc SUPABASE_SERVICE_ROLE_KEY trong .env / Kaggle Secrets — bỏ qua cập nhật Supabase.")
+    if not supabase_url or not key:
+        print("⚠️ Thiếu SUPABASE_URL hoặc SUPABASE_ANON_KEY — bỏ qua cập nhật Supabase.")
         return
 
     try:
         r = requests.patch(
             f"{supabase_url}/rest/v1/global_settings?id=eq.1",
             headers={
-                "apikey": service_key,
-                "Authorization": f"Bearer {service_key}",
+                "apikey": key,
+                "Authorization": f"Bearer {key}",
                 "Content-Type": "application/json",
                 "Prefer": "return=minimal",
             },

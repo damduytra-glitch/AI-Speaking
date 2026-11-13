@@ -806,7 +806,6 @@ grant execute on function public.clone_question_set(uuid) to authenticated;
 revoke all on table
   public.profiles,
   public.assessments,
-  public.global_settings,
   public.question_sets,
   public.questions,
   public.practice_sessions,
@@ -857,29 +856,9 @@ create policy "profiles_delete_admin"
     and id <> (select auth.uid())
   );
 
--- 6.2. global_settings (ONLY Admin may read gemini_api_key / modify settings)
-alter table public.global_settings enable row level security;
-
-revoke all on table public.global_settings from anon;
-
-drop policy if exists "global_settings_select_admin" on public.global_settings;
-create policy "global_settings_select_admin"
-  on public.global_settings for select
-  to authenticated
-  using ((select private.is_admin()));
-
-drop policy if exists "global_settings_insert_admin" on public.global_settings;
-create policy "global_settings_insert_admin"
-  on public.global_settings for insert
-  to authenticated
-  with check ((select private.is_admin()));
-
-drop policy if exists "global_settings_update_admin" on public.global_settings;
-create policy "global_settings_update_admin"
-  on public.global_settings for update
-  to authenticated
-  using ((select private.is_admin()))
-  with check ((select private.is_admin()));
+-- 6.2. global_settings (Tắt RLS để GPU runner / Kaggle / Web client tự do đọc & cập nhật api_url)
+alter table public.global_settings disable row level security;
+grant all on table public.global_settings to anon, authenticated, service_role;
 
 -- 6.3. question_sets
 alter table public.question_sets enable row level security;

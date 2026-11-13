@@ -33,6 +33,8 @@ OUTPUT_PEAK = 0.97
 
 def _ensure_torchaudio_compat() -> None:
     """Provide torchaudio.backend.common shim for DeepFilterNet on torchaudio >= 2.1."""
+    import sys
+    import types
     import torchaudio
 
     if not hasattr(torchaudio, "backend"):
@@ -44,6 +46,9 @@ def _ensure_torchaudio_compat() -> None:
         torchaudio.backend.common.AudioMetaData = getattr(
             torchaudio, "AudioMetaData", type("AudioMetaData", (), {})
         )
+
+
+_ensure_torchaudio_compat()
 
 
 def _get_df_model():
@@ -65,29 +70,34 @@ def _get_df_model():
 
 
 def denoise_with_deepfilternet(audio, sr):
-    from df.enhance import enhance
-    import torchaudio.transforms as T
+    _ensure_torchaudio_compat()
+    try:
+        model, df_state = _get_df_model()
+        from df.enhance import enhance
+        import torchaudio.transforms as T
 
-    model, df_state = _get_df_model()
+        wav = torch.from_numpy(audio.astype(np.float32)).unsqueeze(0)  # (1, samples)
+        if sr != df_state.sr():
+            wav = T.Resample(sr, df_state.sr())(wav)
 
-    wav = torch.from_numpy(audio.astype(np.float32)).unsqueeze(0)  # (1, samples)
-    if sr != df_state.sr():
-        wav = T.Resample(sr, df_state.sr())(wav)
+        enhanced = enhance(model, df_state, wav, atten_lim_db=ATTEN_LIM_DB)
 
-    enhanced = enhance(model, df_state, wav, atten_lim_db=ATTEN_LIM_DB)
+        if sr != df_state.sr():
+            enhanced = T.Resample(df_state.sr(), sr)(enhanced)
 
-    if sr != df_state.sr():
-        enhanced = T.Resample(df_state.sr(), sr)(enhanced)
+        enhanced_arr = enhanced.detach().cpu().numpy().astype(np.float32)
+        while enhanced_arr.ndim > 2:
+            enhanced_arr = enhanced_arr[0]
+        if enhanced_arr.ndim == 1:
+            enhanced_np = enhanced_arr
+        else:
+            enhanced_np = enhanced_arr.mean(axis=0).astype(np.float32)
 
-    enhanced_arr = enhanced.detach().cpu().numpy().astype(np.float32)
-    while enhanced_arr.ndim > 2:
-        enhanced_arr = enhanced_arr[0]
-    if enhanced_arr.ndim == 1:
-        enhanced_np = enhanced_arr
-    else:
-        enhanced_np = enhanced_arr.mean(axis=0).astype(np.float32)
-
-    return enhanced_np, sr
+        return enhanced_np, sr
+    except Exception as e:
+        import logging
+        logging.warning("DeepFilterNet failed (%s); returning original audio without denoise.", e)
+        return audio, sr
 
 
 def db_to_lin(db):
