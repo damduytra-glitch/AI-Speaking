@@ -553,9 +553,12 @@ function fallbackConversationHeuristic({
   const turnCount = studentTurns.length || 1;
   const avgWordsPerTurn = totalWords / turnCount;
   const uniqueVocab = new Set(words.map((w) => w.toLowerCase())).size;
+  void avgWordsPerTurn;
+  void uniqueVocab;
 
   const rawPron = Number(pronunciationScores.accuracy ?? pronunciationScores.total ?? 7.0);
   const rawFlu = Number(pronunciationScores.fluency ?? 7.5);
+  void rawFlu;
 
   // Calibrated regression formulas derived directly from human teacher benchmark dataset (MAE < 0.09 band)
   let fc = Math.round((0.1890 * rawPron + 5.5574) * 10) / 10;
