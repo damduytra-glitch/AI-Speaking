@@ -505,21 +505,50 @@ class Qwen3Transcriber:
             self.language = "Vietnamese"
         self.max_new_tokens = max_new_tokens
 
+        if device is not None:
+            self.device = torch.device(device)
+        else:
+            self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+
         if load_progress is not None:
             load_progress.start("qwen3_proc", self.model_name)
-        self.processor = AutoProcessor.from_pretrained(self.model_name)
+        try:
+            self.processor = AutoProcessor.from_pretrained(self.model_name, trust_remote_code=True)
+        except Exception as e:
+            if "qwen3_asr" in str(e) or "model type" in str(e) or isinstance(e, KeyError):
+                raise RuntimeError(
+                    "Transformers phiên bản hiện tại chưa hỗ trợ kiến trúc 'qwen3_asr'. "
+                    "Vui lòng nâng cấp thư viện bằng lệnh: pip install -U 'transformers>=5.0.0'"
+                ) from e
+            raise
+
         if load_progress is not None:
             load_progress.finish("qwen3_proc", self.model_name)
             load_progress.start("qwen3_model", self.model_name)
 
         target_dtype = torch.float16 if str(torch_dtype).lower() in ("float16", "fp16") else torch.float32
-        device_map = "auto" if torch.cuda.is_available() else "cpu"
-        self.model = AutoModelForMultimodalLM.from_pretrained(
-            self.model_name,
-            dtype=target_dtype,
-            device_map=device_map,
-        )
-        self.device = self.model.device
+        load_kw: Dict[str, Any] = {
+            "torch_dtype": target_dtype,
+            "trust_remote_code": True,
+        }
+        if self.device.type == "cuda":
+            load_kw["device_map"] = {"": self.device}
+        else:
+            load_kw["device_map"] = "cpu"
+
+        try:
+            self.model = AutoModelForMultimodalLM.from_pretrained(
+                self.model_name,
+                **load_kw,
+            )
+        except Exception as e:
+            if "qwen3_asr" in str(e) or "model type" in str(e) or isinstance(e, KeyError):
+                raise RuntimeError(
+                    "Transformers phiên bản hiện tại chưa hỗ trợ kiến trúc 'qwen3_asr'. "
+                    "Vui lòng nâng cấp thư viện bằng lệnh: pip install -U 'transformers>=5.0.0'"
+                ) from e
+            raise
+
         if load_progress is not None:
             load_progress.finish("qwen3_model", self.model_name)
 
