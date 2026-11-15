@@ -508,10 +508,22 @@ class SpeakingPipeline:
         if pen_enabled and words_detail:
             num_crit = 0
             num_warn = 0
-            for w in words_detail:
+            in_name = False
+            for idx_w, w in enumerate(words_detail):
                 w_str = str(w.get("word", "")).lower().strip()
-                # Skip proper names or single-letter spelling tokens from severe penalty
-                if w_str in {"du", "duc", "khoa", "vinh", "truc", "anh", "sofia", "sophia"}:
+                # Skip single-letter spelling tokens or hyphenated spellings
+                if len(w_str) <= 1 or "-" in w_str:
+                    continue
+                # Skip words containing non-ASCII / Vietnamese diacritics
+                if any(ord(c) > 127 for c in w_str):
+                    continue
+                # Skip personal proper names following name introductions ("name is", "i am", "called")
+                if idx_w > 0:
+                    prev_w = str(words_detail[idx_w - 1].get("word", "")).lower().strip()
+                    prev2_w = str(words_detail[idx_w - 2].get("word", "")).lower().strip() if idx_w > 1 else ""
+                    if (prev2_w == "name" and prev_w == "is") or prev_w in ("am", "called"):
+                        in_name = True
+                if in_name:
                     continue
                 for ph in w.get("phonemes") or w.get("phones") or []:
                     st = ph.get("status")
