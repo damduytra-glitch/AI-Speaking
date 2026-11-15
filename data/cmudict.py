@@ -75,6 +75,17 @@ CUSTOM_WORDS: Dict[str, List[str]] = {
     "ai": ["EY1", "AY1"],
     "ok": ["OW1", "K", "EY1"],
     "okay": ["OW1", "K", "EY1"],
+    "du": ["D", "UW1"],
+    "duc": ["D", "AH1", "K"],
+    "khoa": ["K", "W", "AA1"],
+    "vinh": ["V", "IH1", "N"],
+    "truc": ["T", "R", "UW1", "K"],
+    "anh": ["AA1", "N"],
+    "trucanh": ["T", "R", "UW1", "K", "AA1", "N"],
+    "sofia": ["S", "OW1", "F", "IY0", "AH0"],
+    "sophia": ["S", "OW1", "F", "IY0", "AH0"],
+    "mantis": ["M", "AE1", "N", "T", "IH0", "S"],
+    "turquoise": ["T", "ER1", "K", "OY0", "Z"],
 }
 
 

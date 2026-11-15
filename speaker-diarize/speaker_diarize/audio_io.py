@@ -15,6 +15,18 @@ def load_audio(path: str | Path) -> tuple[np.ndarray, int]:
     import torch
     import torchaudio
 
+    p_str = str(path)
+    if p_str.lower().endswith((".mp3", ".m4a", ".aac", ".ogg")):
+        import subprocess
+        cmd = [
+            "ffmpeg", "-y", "-i", p_str,
+            "-f", "f32le", "-ac", "1", "-ar", str(SAMPLE_RATE), "-"
+        ]
+        p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        if p.returncode == 0 and len(p.stdout) > 0:
+            mono = np.frombuffer(p.stdout, dtype=np.float32).copy()
+            return mono, SAMPLE_RATE
+
     try:
         audio, sr = sf.read(str(path), dtype="float32", always_2d=True)
         mono = audio.mean(axis=1)

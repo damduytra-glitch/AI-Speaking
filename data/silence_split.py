@@ -321,12 +321,41 @@ def export_diarization_clips(
     min_samples = int(min_duration_sec * sr)
     exported: List[Dict[str, Any]] = []
 
+    # Thu thập dải thời gian của người nói khác để triệt tiêu dính cắt (Mute other-speaker bleed)
+    other_intervals: List[tuple[float, float]] = []
+    for s in diarize_segments:
+        sp = getattr(s, "speaker", None) if not isinstance(s, dict) else s.get("speaker")
+        if sp is not None and sp not in accepted_labels:
+            st = float(getattr(s, "start", 0) if not isinstance(s, dict) else s.get("start", 0))
+            en = float(getattr(s, "end", 0) if not isinstance(s, dict) else s.get("end", 0))
+            if en > st:
+                other_intervals.append((st, en))
+
     for start, end in merged:
         s = max(0, int(start * sr))
         e = min(mono.shape[0], int(end * sr))
-        clip = mono[s:e].contiguous()
+        clip = mono[s:e].clone()
         if clip.numel() < min_samples:
             continue
+
+        # Zero out (Mute) toàn bộ khoảng thời gian người kia nói xen vào trong lượt này
+        for o_st, o_en in other_intervals:
+            ov_st = max(start, o_st)
+            ov_en = min(end, o_en)
+            if ov_en > ov_st:
+                idx_st = max(0, int((ov_st - start) * sr))
+                idx_en = min(clip.shape[0], int((ov_en - start) * sr))
+                if idx_en > idx_st:
+                    fade_len = min(int(0.005 * sr), (idx_en - idx_st) // 2)
+                    if fade_len > 0:
+                        ramp_down = torch.linspace(1.0, 0.0, fade_len, device=clip.device, dtype=clip.dtype)
+                        ramp_up = torch.linspace(0.0, 1.0, fade_len, device=clip.device, dtype=clip.dtype)
+                        clip[idx_st : idx_st + fade_len] *= ramp_down
+                        clip[idx_st + fade_len : idx_en - fade_len] = 0.0
+                        clip[idx_en - fade_len : idx_en] *= ramp_up
+                    else:
+                        clip[idx_st:idx_en] = 0.0
+
         idx = len(exported)
         path = out / f"{prefix}_{idx:03d}.wav"
         save_audio_file(path, clip.unsqueeze(0), sr)

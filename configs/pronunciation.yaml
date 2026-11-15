@@ -42,8 +42,8 @@ asr:
     text_vi_regex: false
 
 eligibility:
-  min_duration_sec: 0.8
-  min_words: 2
+  min_duration_sec: 0.5
+  min_words: 1
   backchannel_words:
     - 'yes'
     - 'no'
@@ -71,6 +71,13 @@ eligibility:
     - bye bye
     - hello
     - hi
+    - oh my god
+    - my god
+    - oh god
+    - gosh
+    - oops
+    - jeez
+    - oh dear
 
 wavlm:
   model_name: microsoft/wavlm-large
@@ -109,54 +116,17 @@ multitask:
   score_scale: 5.0
 
 scorer:
-  weights:
-    utterance_total: 0.5
-    word_total: 0.25
-    phoneme_accuracy: 0.25
   phoneme_low_threshold: 1.2
-
-  # Hiệu chuẩn âm học cơ sở (WavLM-Large + LoRA + GATv2)
-  calibration:
-    enabled: true
-    slope: 1.0
-    offset: 0.0
-    short_duration_sec: 3.5
-    short_duration_factor: 0.20
-    long_duration_sec: 4.0
-    long_duration_factor: 0.05
-    long_duration_max_boost: 0.4
-    phone_slope: 6.0
-    phone_offset: -3.0
-
-  # Hiệu chuẩn điểm Phát âm (Pronunciation - PR) theo chuẩn khảo thí thực tế
-  pronunciation_calibration:
-    enabled: true
-    w_acc: 0.8655
-    w_flu: 0.0767
-    w_pro: -0.3757
-    bias: 3.1879
-    min_score: 1.0
-    max_score: 9.5
-
-  # Tham số trừ điểm chẩn đoán âm vị L2-MDD (ASHA)
   l2_mdd_penalty:
     enabled: true
-    pen_bad: 0.04
-    pen_warning: 0.015
-    max_penalty: 0.35
 
-  # Barem quy đổi 4 trụ cột IELTS Speaking (FC, LR, GRA) từ điểm âm học thực nghiệm
-  ielts_calibration:
-    enabled: true
-    fc:
-      slope: 0.1890
-      bias: 5.5574
-    lr:
-      slope: 0.2162
-      bias: 5.4123
-    gra:
-      slope: 0.6774
-      bias: 2.4684
+# Cấu hình đánh giá Ngữ pháp & Từ vựng tự nhiên (LanguageTool + spaCy + wordfreq + NLTK + Single LLM)
+nlp_scoring:
+  enabled: true
+  rounding_step: 0.5
+  llm_weight: 0.6
+  nlp_weight: 0.4
+  llm_timeout_sec: 25
 
 sentence_split:
   min_silence_sec: 0.35
@@ -167,7 +137,7 @@ sentence_split:
   trim_edges: false
   trim_min_sec: 0.05
   diarization_merge_gap_sec: 1.2
-  intervening_backchannel_max_sec: 0.85
+  intervening_backchannel_max_sec: 0.5
 
 diarization:
   vad_threshold_db: -42.0

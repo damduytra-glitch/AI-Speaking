@@ -128,8 +128,7 @@ class Predictor:
         self.scorer = PronunciationScorer(
             score_scale=mt.get("score_scale", 5.0),
             weights=scorer_cfg.get("weights"),
-            phoneme_low_threshold=scorer_cfg.get("phoneme_low_threshold", 1.4),
-            calibration=scorer_cfg.get("calibration"),
+            phoneme_low_threshold=scorer_cfg.get("phoneme_low_threshold", 1.2),
         )
 
     def _phones_from_text(self, text: str):

@@ -147,8 +147,7 @@ class PronunciationScorer:
         self,
         score_scale: float = 5.0,
         weights: Optional[Dict[str, float]] = None,
-        phoneme_low_threshold: float = 1.4,
-        calibration: Optional[Dict[str, Any]] = None,
+        phoneme_low_threshold: float = 1.2,
     ):
         self.score_scale = score_scale
         self.weights = weights or {
@@ -157,7 +156,6 @@ class PronunciationScorer:
             "phoneme_accuracy": 0.25,
         }
         self.phoneme_low_threshold = phoneme_low_threshold
-        self.calibration = calibration or {}
 
     def to_display_scale(
         self,
@@ -167,36 +165,8 @@ class PronunciationScorer:
         is_phone: bool = False,
         duration_sec: Optional[float] = None,
     ) -> float:
-        """Map 0-2 normalized score -> 0-10 display scale.
-        
-        Applies affine calibration and duration-aware adjustment when enabled
-        in config to stabilize predictions across varying clip lengths and quality levels.
-        """
+        """Map 0-2 normalized score -> 0-10 display scale naturally without artificial affine multipliers."""
         raw = score * self.score_scale
-        cal_cfg = self.calibration if self.calibration.get("enabled", False) else None
-
-        if cal_cfg:
-            if is_phone:
-                phone_slope = float(cal_cfg.get("phone_slope", 7.0))
-                phone_offset = float(cal_cfg.get("phone_offset", -4.0))
-                raw = phone_slope * score + phone_offset
-            elif is_utterance:
-                slope = float(cal_cfg.get("slope", 1.39))
-                offset = float(cal_cfg.get("offset", -3.20))
-                cal = slope * raw + offset
-                short_sec = float(cal_cfg.get("short_duration_sec", 3.5))
-                factor = float(cal_cfg.get("short_duration_factor", 0.75))
-                if duration_sec is not None and duration_sec < short_sec and raw < 8.2:
-                    cal -= factor * (short_sec - duration_sec)
-
-                # Long duration adjustment (compensates for embedding dispersion on long clips > 4.0s):
-                long_sec = float(cal_cfg.get("long_duration_sec", 4.0))
-                long_factor = float(cal_cfg.get("long_duration_factor", 0.28))
-                max_boost = float(cal_cfg.get("long_duration_max_boost", 2.5))
-                if duration_sec is not None and duration_sec > long_sec:
-                    cal += min(max_boost, long_factor * (duration_sec - long_sec))
-                raw = cal
-
         # Clamp to [0, 10] range
         clamped = min(10.0, max(0.0, raw))
         # Minimum floor to avoid misleading 0-scores for valid predictions

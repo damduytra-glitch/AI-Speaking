@@ -299,12 +299,26 @@ class WhisperTranscriber:
                 target_lang = self.language
 
         # Decode with native language/task args first (required for whisper-large-v3 on transformers >= 4.41/5.x)
+        prompt_ids = None
+        if prompt:
+            try:
+                p_ids = self.processor.get_prompt_ids(prompt, return_tensors="pt")
+                prompt_ids = p_ids.to(self.device)
+            except Exception:
+                prompt_ids = None
+
+        gen_kw: Dict[str, Any] = {
+            "max_new_tokens": max_tokens,
+            "language": target_lang,
+            "task": "transcribe",
+        }
+        if prompt_ids is not None:
+            gen_kw["prompt_ids"] = prompt_ids
+
         try:
             ids = self.model.generate(
                 input_features,
-                max_new_tokens=max_tokens,
-                language=target_lang,
-                task="transcribe",
+                **gen_kw,
             )
         except Exception:
             # Legacy fallback with explicit forced_decoder_ids for older transformers
@@ -312,10 +326,15 @@ class WhisperTranscriber:
                 language=target_lang,
                 task="transcribe",
             )
+            fallback_kw = {
+                "max_new_tokens": max_tokens,
+                "forced_decoder_ids": decoder_ids,
+            }
+            if prompt_ids is not None:
+                fallback_kw["prompt_ids"] = prompt_ids
             ids = self.model.generate(
                 input_features,
-                max_new_tokens=max_tokens,
-                forced_decoder_ids=decoder_ids,
+                **fallback_kw,
             )
 
         text = self.processor.batch_decode(ids, skip_special_tokens=True)[0]
@@ -326,6 +345,7 @@ class WhisperTranscriber:
         wav: torch.Tensor,
         *,
         language_override: Optional[str] = None,
+        prompt: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Process waveform tensor and return text and language metadata."""
         from infer.lang_id import compute_vietnamese_percent, text_looks_vietnamese
@@ -342,7 +362,7 @@ class WhisperTranscriber:
 
         # Pure forced-language mode (e.g., conversation/practice 'en'): skip language-ID forward pass
         if target_mode not in ("auto", "", "none"):
-            raw_text, used_lang = self._generate_with_lang(input_features, forced_lang=target_mode)
+            raw_text, used_lang = self._generate_with_lang(input_features, forced_lang=target_mode, prompt=prompt)
             is_vi = used_lang in ("vi", "vie", "vietnamese")
             normalized_text = _normalize_transcript(raw_text, is_vietnamese=is_vi)
             return {
@@ -383,6 +403,7 @@ class WhisperTranscriber:
         *,
         language: Optional[str] = None,
         skip_vad_check: bool = False,
+        prompt: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Transcribe an in-memory 1D mono waveform without temporary file I/O."""
         from infer.lang_id import compute_vietnamese_percent
@@ -409,7 +430,7 @@ class WhisperTranscriber:
         target_mode = (language or self.language or "auto").strip().lower()
 
         if wav.shape[0] <= chunk_samples:
-            res = self._transcribe_waveform_with_meta(wav, language_override=language)
+            res = self._transcribe_waveform_with_meta(wav, language_override=language, prompt=prompt)
             res["duration_sec"] = duration_sec
             return res
 
@@ -422,7 +443,7 @@ class WhisperTranscriber:
 
         for start in range(0, wav.shape[0], chunk_samples):
             chunk = wav[start : start + chunk_samples]
-            chunk_res = self._transcribe_waveform_with_meta(chunk, language_override=language)
+            chunk_res = self._transcribe_waveform_with_meta(chunk, language_override=language, prompt=prompt)
             if chunk_res["text"] or chunk_res["raw_text"]:
                 parts_text.append(chunk_res["text"])
                 parts_raw.append(chunk_res["raw_text"])
@@ -468,16 +489,17 @@ class WhisperTranscriber:
         audio_path: PathLike,
         *,
         language: Optional[str] = None,
+        prompt: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Transcribe audio file and return metadata including detected language."""
         wav, sr = load_audio_file(audio_path)
         wav = wav.mean(0)
-        return self.transcribe_waveform(wav, sample_rate=sr, language=language)
+        return self.transcribe_waveform(wav, sample_rate=sr, language=language, prompt=prompt)
 
     @torch.inference_mode()
-    def transcribe(self, audio_path: PathLike) -> str:
+    def transcribe(self, audio_path: PathLike, prompt: Optional[str] = None) -> str:
         """Transcribe audio file and return normalized text string."""
-        meta = self.transcribe_with_meta(audio_path)
+        meta = self.transcribe_with_meta(audio_path, prompt=prompt)
         return meta["text"]
 
 
@@ -559,6 +581,7 @@ class Qwen3Transcriber:
         sample_rate: int = 16000,
         *,
         language: Optional[str] = None,
+        prompt: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Transcribe waveform tensor and return metadata matching evaluation format."""
         if waveform.dim() > 1:
@@ -581,10 +604,14 @@ class Qwen3Transcriber:
         elif target_lang and str(target_lang).lower() in ("auto", "none"):
             target_lang = None
 
-        inputs = self.processor.apply_transcription_request(
-            audio=wav_np,
-            language=target_lang,
-        ).to(self.model.device, self.model.dtype)
+        req_kw: Dict[str, Any] = {
+            "audio": wav_np,
+            "language": target_lang,
+        }
+        if prompt:
+            req_kw["prompt"] = prompt
+
+        inputs = self.processor.apply_transcription_request(**req_kw).to(self.model.device, self.model.dtype)
 
         output_ids = self.model.generate(**inputs, max_new_tokens=self.max_new_tokens)
         generated_ids = output_ids[:, inputs["input_ids"].shape[1]:]
@@ -609,14 +636,15 @@ class Qwen3Transcriber:
         audio_path: PathLike,
         *,
         language: Optional[str] = None,
+        prompt: Optional[str] = None,
     ) -> Dict[str, Any]:
         wav, sr = load_audio_file(audio_path)
         wav = wav.mean(0)
-        return self.transcribe_waveform(wav, sample_rate=sr, language=language)
+        return self.transcribe_waveform(wav, sample_rate=sr, language=language, prompt=prompt)
 
     @torch.inference_mode()
-    def transcribe(self, audio_path: PathLike) -> str:
-        meta = self.transcribe_with_meta(audio_path)
+    def transcribe(self, audio_path: PathLike, prompt: Optional[str] = None) -> str:
+        meta = self.transcribe_with_meta(audio_path, prompt=prompt)
         return meta["text"]
 
 
@@ -687,15 +715,17 @@ def transcribe_audio(
     audio_path: PathLike,
     *,
     asr_config: Optional[Dict[str, Any]] = None,
+    prompt: Optional[str] = None,
 ) -> str:
     """Convenience helper returning normalized transcript string."""
-    return get_transcriber(asr_config=asr_config).transcribe(audio_path)
+    return get_transcriber(asr_config=asr_config).transcribe(audio_path, prompt=prompt)
 
 
 def transcribe_audio_with_meta(
     audio_path: PathLike,
     *,
     asr_config: Optional[Dict[str, Any]] = None,
+    prompt: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Convenience helper returning transcript with language and detection metadata."""
-    return get_transcriber(asr_config=asr_config).transcribe_with_meta(audio_path)
+    return get_transcriber(asr_config=asr_config).transcribe_with_meta(audio_path, prompt=prompt)

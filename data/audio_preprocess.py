@@ -15,6 +15,16 @@ PathLike = Union[str, Path]
 def load_audio_file(path: PathLike) -> Tuple[torch.Tensor, int]:
     """Load audio as float tensor [channels, samples] without torchcodec."""
     import soundfile as sf
+    import subprocess
+    import numpy as np
+
+    p_str = str(path)
+    if p_str.lower().endswith((".mp3", ".m4a", ".aac", ".ogg")):
+        cmd = ["ffmpeg", "-y", "-i", p_str, "-f", "f32le", "-ac", "1", "-ar", "16000", "-"]
+        p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        if p.returncode == 0 and len(p.stdout) > 0:
+            data = np.frombuffer(p.stdout, dtype=np.float32).copy()
+            return torch.from_numpy(data).unsqueeze(0), 16000
 
     try:
         data, sr = sf.read(str(path), dtype="float32")
@@ -24,8 +34,6 @@ def load_audio_file(path: PathLike) -> Tuple[torch.Tensor, int]:
             wav = torch.from_numpy(data.T.copy())
         return wav, int(sr)
     except Exception:
-        import subprocess
-        import numpy as np
         cmd = ["ffmpeg", "-y", "-i", str(path), "-f", "f32le", "-ac", "1", "-ar", "16000", "-"]
         p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         if p.returncode != 0:
