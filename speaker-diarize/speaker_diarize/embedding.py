@@ -6,8 +6,51 @@ import torch
 import torchaudio
 
 SAMPLE_RATE = 16000
-HUB_MODEL_ID = "damo/speech_eres2net_large_200k_sv_zh-cn_16k-common"
+HUB_MODEL_ID = "iic/speech_eres2net_large_200k_sv_zh-cn_16k-common"
 DEFAULT_MODEL_ID = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "pretrained_models", "speech_eres2net_large_200k_sv_zh-cn_16k-common")
+
+
+def _download_eres2net_files(dest_dir: str) -> bool:
+    """Download ERes2Net model files directly via HTTP (bypasses ModelScope REST API rate-limits)."""
+    import shutil
+    import urllib.request
+
+    os.makedirs(dest_dir, exist_ok=True)
+    pt_path = os.path.join(dest_dir, "pretrained_eres2net.pt")
+    cfg_path = os.path.join(dest_dir, "configuration.json")
+    base_url = "https://www.modelscope.cn/models/iic/speech_eres2net_large_200k_sv_zh-cn_16k-common/resolve/master"
+    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
+
+    try:
+        if not os.path.isfile(cfg_path) or os.path.getsize(cfg_path) < 50:
+            print(f"[ERes2Net] Downloading configuration.json to {dest_dir}...")
+            req = urllib.request.Request(f"{base_url}/configuration.json", headers=headers)
+            with urllib.request.urlopen(req, timeout=30) as resp, open(cfg_path, "wb") as f:
+                shutil.copyfileobj(resp, f)
+
+        if not os.path.isfile(pt_path) or os.path.getsize(pt_path) < 10_000_000:
+            print(f"[ERes2Net] Downloading pretrained_eres2net.pt (~116MB) directly via HTTP...")
+            req = urllib.request.Request(f"{base_url}/pretrained_eres2net.pt", headers=headers)
+            tmp_path = pt_path + ".tmp"
+            with urllib.request.urlopen(req, timeout=180) as resp, open(tmp_path, "wb") as f:
+                shutil.copyfileobj(resp, f)
+            if os.path.exists(pt_path):
+                os.remove(pt_path)
+            os.rename(tmp_path, pt_path)
+
+        if os.path.isfile(pt_path) and os.path.getsize(pt_path) > 10_000_000 and os.path.isfile(cfg_path):
+            print(f"[ERes2Net] Direct download successful at: {dest_dir}")
+            return True
+    except Exception as e:
+        print(f"[ERes2Net] Direct download notice ({e}). Trying fallback...")
+        tmp_path = pt_path + ".tmp"
+        if os.path.exists(tmp_path):
+            try:
+                os.remove(tmp_path)
+            except OSError:
+                pass
+    return False
+
 
 def resolve_eres2net_model(model_id: str | None = None) -> str:
     """
@@ -15,7 +58,8 @@ def resolve_eres2net_model(model_id: str | None = None) -> str:
     1. Nếu model_id được truyền vào và thư mục chứa pretrained_eres2net.pt (> 10MB) -> Dùng model_id.
     2. Nếu thư mục mặc định trong speaker-diarize chứa pretrained_eres2net.pt (> 10MB) -> Dùng mặc định.
     3. Tìm kiếm trong /kaggle/working và /kaggle/input xem có thư mục chứa pretrained_eres2net.pt (> 10MB) -> Dùng thư mục đó.
-    4. Nếu không có tại local, tự động tải/cache qua snapshot_download('damo/speech_eres2net_large_200k_sv_zh-cn_16k-common').
+    4. Tải trực tiếp qua HTTP resolve URL (bỏ qua API rate-limit của ModelScope).
+    5. Fallback qua snapshot_download('iic/speech_eres2net_large_200k_sv_zh-cn_16k-common').
     """
     # 1. Kiểm tra model_id truyền vào
     if model_id and os.path.isdir(model_id):
@@ -31,7 +75,7 @@ def resolve_eres2net_model(model_id: str | None = None) -> str:
         if os.path.isfile(pt_path) and os.path.getsize(pt_path) > 10_000_000 and os.path.isfile(cfg_path):
             return DEFAULT_MODEL_ID
 
-    # 3. Tim kiem trong Kaggle directories (/kaggle/working, /kaggle/input)
+    # 3. Tìm kiếm trong Kaggle directories (/kaggle/working, /kaggle/input)
     for search_root in ["/kaggle/working", "/kaggle/input"]:
         if os.path.exists(search_root):
             for root, dirs, files in os.walk(search_root):
@@ -41,15 +85,19 @@ def resolve_eres2net_model(model_id: str | None = None) -> str:
                         print(f"[ERes2Net] Found valid checkpoint at: {root}")
                         return root
 
-    # 4. Tai tu ModelScope Hub
+    # 4. Tải trực tiếp qua HTTP resolve URL vào DEFAULT_MODEL_ID
+    if _download_eres2net_files(DEFAULT_MODEL_ID):
+        return DEFAULT_MODEL_ID
+
+    # 5. Tải từ ModelScope Hub (snapshot_download)
     try:
         from modelscope.hub.snapshot_download import snapshot_download
-        print(f"[ERes2Net] Local checkpoint missing or incomplete. Downloading {HUB_MODEL_ID} from ModelScope...")
+        print(f"[ERes2Net] Trying snapshot_download for {HUB_MODEL_ID}...")
         cache_dir = snapshot_download(HUB_MODEL_ID)
         print(f"[ERes2Net] Model downloaded successfully to: {cache_dir}")
         return cache_dir
     except Exception as e:
-        print(f"[ERes2Net] Warning during download ({e}), using Hub ID directly: {HUB_MODEL_ID}")
+        print(f"[ERes2Net] Warning during snapshot download ({e}), using Hub ID directly: {HUB_MODEL_ID}")
         return HUB_MODEL_ID
 
 
