@@ -147,7 +147,7 @@ def main():
                     mf = json.load(f)
                 n_turns = mf.get("num_student_turns", 0)
                 exp = s_info["expected_turns"]
-                status = "MATCH" if n_turns == exp or (name == "Duc" and n_turns == 13) else "CHECK"
+                status = "MATCH" if n_turns == exp else "CHECK"
                 print(f"{name:<12} | {n_turns:<18} | {exp:<20} | {status:<10}")
         print("=" * 80 + "\n")
 

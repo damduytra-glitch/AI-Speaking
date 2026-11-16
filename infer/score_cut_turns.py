@@ -94,6 +94,7 @@ class CutTurnScorer:
         audio_path: str,
         transcript: str,
         duration_sec: float,
+        teacher_prompt: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Score a single audio clip using SpeechOcean + L2-MDD + IELTS rubric."""
         # 1. SpeechOcean762 prediction
@@ -154,6 +155,7 @@ class CutTurnScorer:
             errors=final_errors,
             duration_sec=duration_sec,
             config=self.scorer_cfg,
+            teacher_prompt=teacher_prompt,
         )
 
         calibrated_scores.update({
@@ -254,7 +256,8 @@ class CutTurnScorer:
 
             # Score eligible turn
             try:
-                assessment = self.score_single_turn(aud, tr, dur)
+                t_prompt = t.get("teacher_prompt")
+                assessment = self.score_single_turn(aud, tr, dur, teacher_prompt=t_prompt)
                 turn_obj = {
                     "index": t_idx,
                     "start_sec": t.get("start_sec", 0.0),

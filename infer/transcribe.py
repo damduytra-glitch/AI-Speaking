@@ -161,14 +161,18 @@ class WhisperTranscriber:
         self.max_new_tokens = max_new_tokens
         dtype = _parse_dtype(torch_dtype, self.device)
 
+        is_local = bool(self.model_name and os.path.isdir(self.model_name))
         if load_progress is not None:
             load_progress.start("whisper_proc", self.model_name)
-        self.processor = WhisperProcessor.from_pretrained(self.model_name)
+        proc_kw = {"local_files_only": True} if is_local else {}
+        self.processor = WhisperProcessor.from_pretrained(self.model_name, **proc_kw)
         if load_progress is not None:
             load_progress.finish("whisper_proc", self.model_name)
             load_progress.start("whisper_model", self.model_name)
 
         load_kw: Dict[str, Any] = {}
+        if is_local:
+            load_kw["local_files_only"] = True
         if self.device.type == "cuda" and dtype != torch.float32:
             load_kw["torch_dtype"] = dtype
         try:
@@ -278,6 +282,7 @@ class WhisperTranscriber:
         self,
         input_features: torch.Tensor,
         forced_lang: Optional[str] = None,
+        prompt: Optional[str] = None,
     ) -> Tuple[str, str]:
         """Generate transcription and return (raw_text, detected_language)."""
         name = self.model_name.lower()
@@ -532,10 +537,14 @@ class Qwen3Transcriber:
         else:
             self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
+        is_local = bool(self.model_name and os.path.isdir(self.model_name))
         if load_progress is not None:
             load_progress.start("qwen3_proc", self.model_name)
+        proc_kw: Dict[str, Any] = {"trust_remote_code": True}
+        if is_local:
+            proc_kw["local_files_only"] = True
         try:
-            self.processor = AutoProcessor.from_pretrained(self.model_name, trust_remote_code=True)
+            self.processor = AutoProcessor.from_pretrained(self.model_name, **proc_kw)
         except Exception as e:
             if "qwen3_asr" in str(e) or "model type" in str(e) or isinstance(e, KeyError):
                 raise RuntimeError(
@@ -553,6 +562,8 @@ class Qwen3Transcriber:
             "torch_dtype": target_dtype,
             "trust_remote_code": True,
         }
+        if is_local:
+            load_kw["local_files_only"] = True
         if self.device.type == "cuda":
             load_kw["device_map"] = {"": self.device}
         else:

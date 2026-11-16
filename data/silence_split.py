@@ -290,6 +290,24 @@ def export_diarization_clips(
                 else:
                     block_merged.append((start, end))
             merged.extend(block_merged)
+
+        # Trailing Continuation Recovery for student responses:
+        # In conversational dialogue, a student may pause or be briefly interjected by the teacher
+        # before uttering a brief closing fragment (e.g. "...and me", "...too").
+        # If a short segment (< min_duration_sec) occurs within a short gap (<= 2.0s)
+        # of the preceding student turn, merge it into the preceding turn instead of discarding it.
+        if speaker_key.lower() in ("student", "speaker b", "s"):
+            trailing_gap_sec = 2.0
+            final_merged: List[tuple[float, float]] = []
+            for m in merged:
+                dur = m[1] - m[0]
+                if dur < min_duration_sec:
+                    if final_merged and (m[0] - final_merged[-1][1]) <= trailing_gap_sec:
+                        prev = final_merged[-1]
+                        final_merged[-1] = (prev[0], m[1])
+                else:
+                    final_merged.append(m)
+            merged = final_merged
     else:
         # Single speaker mode: merge consecutive spans by gap
         spans: List[tuple[float, float]] = []
@@ -338,23 +356,9 @@ def export_diarization_clips(
         if clip.numel() < min_samples:
             continue
 
-        # Zero out (Mute) toàn bộ khoảng thời gian người kia nói xen vào trong lượt này
-        for o_st, o_en in other_intervals:
-            ov_st = max(start, o_st)
-            ov_en = min(end, o_en)
-            if ov_en > ov_st:
-                idx_st = max(0, int((ov_st - start) * sr))
-                idx_en = min(clip.shape[0], int((ov_en - start) * sr))
-                if idx_en > idx_st:
-                    fade_len = min(int(0.005 * sr), (idx_en - idx_st) // 2)
-                    if fade_len > 0:
-                        ramp_down = torch.linspace(1.0, 0.0, fade_len, device=clip.device, dtype=clip.dtype)
-                        ramp_up = torch.linspace(0.0, 1.0, fade_len, device=clip.device, dtype=clip.dtype)
-                        clip[idx_st : idx_st + fade_len] *= ramp_down
-                        clip[idx_st + fade_len : idx_en - fade_len] = 0.0
-                        clip[idx_en - fade_len : idx_en] *= ramp_up
-                    else:
-                        clip[idx_st:idx_en] = 0.0
+        # Muting intervening other_intervals was removed because it destroys target speaker
+        # speech during cross-talk/overlap (e.g. student finishing '...and me' while teacher speaks).
+        pass
 
         idx = len(exported)
         path = out / f"{prefix}_{idx:03d}.wav"

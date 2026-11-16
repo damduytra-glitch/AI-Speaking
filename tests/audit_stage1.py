@@ -41,12 +41,6 @@ for folder, gt_key in STUDENTS:
         p_turn = turns[pred_idx]
         g_turn = s_gt[gt_idx]
         
-        # If unscored backchannel like Duc Turn 2 ("OH MY GOD")
-        if folder == 'Duc' and pred_idx == 1 and 'oh my god' in p_turn['transcript'].lower():
-            print(f"  [Bỏ qua câu cảm thán không chấm - Turn {pred_idx+1}]: '{p_turn['transcript']}'")
-            pred_idx += 1
-            continue
-            
         p_tr = p_turn['transcript'].strip()
         g_tr = g_turn['transcript'].strip()
         

@@ -1,0 +1,772 @@
+{
+  "Du": [
+    {
+      "stt": 1,
+      "transcript": "My name is Du.",
+      "fc": 7.0,
+      "lr": 7.0,
+      "gra": 8.0,
+      "p": 7.5,
+      "overall": 7.5
+    },
+    {
+      "stt": 2,
+      "transcript": "D-U.",
+      "fc": 7.0,
+      "lr": 7.0,
+      "gra": 8.0,
+      "p": 7.5,
+      "overall": 7.5
+    },
+    {
+      "stt": 3,
+      "transcript": "There are three people in my family.",
+      "fc": 7.0,
+      "lr": 7.0,
+      "gra": 8.0,
+      "p": 8.0,
+      "overall": 7.5
+    },
+    {
+      "stt": 4,
+      "transcript": "My mom, my dad, and me.",
+      "fc": 7.0,
+      "lr": 7.0,
+      "gra": 7.0,
+      "p": 7.5,
+      "overall": 7.0
+    },
+    {
+      "stt": 5,
+      "transcript": "My favorite fruit is apple.",
+      "fc": 7.0,
+      "lr": 7.0,
+      "gra": 6.5,
+      "p": 7.5,
+      "overall": 7.0
+    },
+    {
+      "stt": 6,
+      "transcript": "My favorite food is pizza.",
+      "fc": 7.0,
+      "lr": 7.0,
+      "gra": 8.0,
+      "p": 7.5,
+      "overall": 7.5
+    },
+    {
+      "stt": 7,
+      "transcript": "My favorite drink is Coca-Cola.",
+      "fc": 7.0,
+      "lr": 7.0,
+      "gra": 8.0,
+      "p": 7.5,
+      "overall": 7.5
+    },
+    {
+      "stt": 8,
+      "transcript": "I like... turquoise.",
+      "fc": 6.5,
+      "lr": 7.5,
+      "gra": 8.0,
+      "p": 8.0,
+      "overall": 7.5
+    },
+    {
+      "stt": 9,
+      "transcript": "My favorite weather is sunny.",
+      "fc": 7.0,
+      "lr": 7.0,
+      "gra": 7.0,
+      "p": 8.0,
+      "overall": 7.0
+    },
+    {
+      "stt": 10,
+      "transcript": "My favorite animal is the blue whale.",
+      "fc": 7.0,
+      "lr": 7.0,
+      "gra": 7.0,
+      "p": 8.0,
+      "overall": 7.0
+    },
+    {
+      "stt": 11,
+      "transcript": "Because it's bigger than the other animals.",
+      "fc": 7.0,
+      "lr": 7.5,
+      "gra": 8.5,
+      "p": 8.5,
+      "overall": 8.0
+    }
+  ],
+  "Khang": [
+    {
+      "stt": 1,
+      "transcript": "My name is Minh Khang.",
+      "fc": 7.0,
+      "lr": 7.0,
+      "gra": 8.0,
+      "p": 8.0,
+      "overall": 7.5
+    },
+    {
+      "stt": 2,
+      "transcript": "M-I-N-H-K-H-A-N-G.",
+      "fc": 7.0,
+      "lr": 7.0,
+      "gra": 8.0,
+      "p": 8.0,
+      "overall": 7.5
+    },
+    {
+      "stt": 3,
+      "transcript": "I'm 8 years old.",
+      "fc": 7.0,
+      "lr": 7.0,
+      "gra": 8.0,
+      "p": 8.0,
+      "overall": 7.5
+    },
+    {
+      "stt": 4,
+      "transcript": "There are seven people in my family.",
+      "fc": 7.0,
+      "lr": 7.5,
+      "gra": 8.0,
+      "p": 8.5,
+      "overall": 8.0
+    },
+    {
+      "stt": 5,
+      "transcript": "My mom, my dad, me, my baby brother, grandpa, grandma, my uncle.",
+      "fc": 7.0,
+      "lr": 7.0,
+      "gra": 7.0,
+      "p": 7.5,
+      "overall": 7.0
+    },
+    {
+      "stt": 6,
+      "transcript": "My favorite food is pasta.",
+      "fc": 7.5,
+      "lr": 7.0,
+      "gra": 8.0,
+      "p": 8.0,
+      "overall": 7.5
+    },
+    {
+      "stt": 7,
+      "transcript": "My favorite fruit is banana and apple.",
+      "fc": 7.0,
+      "lr": 7.0,
+      "gra": 7.0,
+      "p": 7.5,
+      "overall": 7.0
+    },
+    {
+      "stt": 8,
+      "transcript": "My favorite drink is soda.",
+      "fc": 7.5,
+      "lr": 7.0,
+      "gra": 8.0,
+      "p": 7.5,
+      "overall": 7.5
+    },
+    {
+      "stt": 9,
+      "transcript": "My favorite color is red.",
+      "fc": 7.0,
+      "lr": 7.0,
+      "gra": 8.0,
+      "p": 6.5,
+      "overall": 7.0
+    },
+    {
+      "stt": 10,
+      "transcript": "My favorite weather is sunny.",
+      "fc": 7.0,
+      "lr": 7.0,
+      "gra": 7.0,
+      "p": 7.0,
+      "overall": 7.0
+    },
+    {
+      "stt": 11,
+      "transcript": "My favorite animal is dog.",
+      "fc": 7.0,
+      "lr": 7.0,
+      "gra": 6.5,
+      "p": 6.5,
+      "overall": 7.0
+    },
+    {
+      "stt": 12,
+      "transcript": "Because the dog is cute.",
+      "fc": 7.5,
+      "lr": 7.5,
+      "gra": 8.0,
+      "p": 8.0,
+      "overall": 8.0
+    }
+  ],
+  "Khoa": [
+    {
+      "stt": 1,
+      "transcript": "My name is Khoa.",
+      "fc": 7.0,
+      "lr": 7.0,
+      "gra": 8.0,
+      "p": 7.0,
+      "overall": 7.0
+    },
+    {
+      "stt": 2,
+      "transcript": "K-H-O-A.",
+      "fc": 7.0,
+      "lr": 7.0,
+      "gra": 7.0,
+      "p": 6.5,
+      "overall": 7.0
+    },
+    {
+      "stt": 3,
+      "transcript": "There are five people in my house.",
+      "fc": 7.0,
+      "lr": 7.0,
+      "gra": 7.5,
+      "p": 7.5,
+      "overall": 7.0
+    },
+    {
+      "stt": 4,
+      "transcript": "My sister, my mother, my grandma, my aunt and me.",
+      "fc": 7.0,
+      "lr": 7.0,
+      "gra": 7.5,
+      "p": 7.5,
+      "overall": 7.0
+    },
+    {
+      "stt": 5,
+      "transcript": "My favorite food is grape.",
+      "fc": 6.5,
+      "lr": 6.5,
+      "gra": 7.0,
+      "p": 6.5,
+      "overall": 6.5
+    },
+    {
+      "stt": 6,
+      "transcript": "My favorite food is rice and meat.",
+      "fc": 7.0,
+      "lr": 7.0,
+      "gra": 8.0,
+      "p": 8.5,
+      "overall": 7.5
+    },
+    {
+      "stt": 7,
+      "transcript": "My favorite drinks is orange juice.",
+      "fc": 7.0,
+      "lr": 7.0,
+      "gra": 6.0,
+      "p": 7.0,
+      "overall": 7.0
+    },
+    {
+      "stt": 8,
+      "transcript": "My favorite color is red.",
+      "fc": 7.0,
+      "lr": 7.0,
+      "gra": 8.0,
+      "p": 6.5,
+      "overall": 7.0
+    },
+    {
+      "stt": 9,
+      "transcript": "My favorite weather is windy.",
+      "fc": 7.0,
+      "lr": 6.5,
+      "gra": 7.0,
+      "p": 8.0,
+      "overall": 7.0
+    },
+    {
+      "stt": 10,
+      "transcript": "My favorite animal is cat.",
+      "fc": 7.0,
+      "lr": 7.0,
+      "gra": 6.5,
+      "p": 7.0,
+      "overall": 7.0
+    },
+    {
+      "stt": 11,
+      "transcript": "Because it's very cute.",
+      "fc": 6.5,
+      "lr": 7.0,
+      "gra": 7.0,
+      "p": 8.5,
+      "overall": 7.0
+    },
+    {
+      "stt": 12,
+      "transcript": "Goodbye.",
+      "fc": 7.0,
+      "lr": 7.0,
+      "gra": 8.0,
+      "p": 7.0,
+      "overall": 7.0
+    }
+  ],
+  "Sophia": [
+    {
+      "stt": 1,
+      "transcript": "My name is Sophia.",
+      "fc": 7.0,
+      "lr": 7.0,
+      "gra": 8.0,
+      "p": 8.0,
+      "overall": 7.5
+    },
+    {
+      "stt": 2,
+      "transcript": "S-O-P-H-I-A.",
+      "fc": 7.0,
+      "lr": 7.0,
+      "gra": 8.0,
+      "p": 7.5,
+      "overall": 7.5
+    },
+    {
+      "stt": 3,
+      "transcript": "There are four people in my family.",
+      "fc": 7.0,
+      "lr": 7.0,
+      "gra": 8.0,
+      "p": 7.5,
+      "overall": 7.5
+    },
+    {
+      "stt": 4,
+      "transcript": "My mom, my dad, my baby brother, and me.",
+      "fc": 7.0,
+      "lr": 7.0,
+      "gra": 7.0,
+      "p": 8.0,
+      "overall": 7.0
+    },
+    {
+      "stt": 5,
+      "transcript": "Food or fruit?",
+      "fc": 7.5,
+      "lr": 7.0,
+      "gra": 7.0,
+      "p": 7.0,
+      "overall": 7.0
+    },
+    {
+      "stt": 6,
+      "transcript": "My favorite fruit is coconut.",
+      "fc": 7.0,
+      "lr": 7.0,
+      "gra": 8.0,
+      "p": 7.5,
+      "overall": 7.5
+    },
+    {
+      "stt": 7,
+      "transcript": "My favorite food is sushi.",
+      "fc": 7.0,
+      "lr": 7.0,
+      "gra": 8.0,
+      "p": 6.0,
+      "overall": 7.0
+    },
+    {
+      "stt": 8,
+      "transcript": "My favorite drink is orange juice.",
+      "fc": 7.0,
+      "lr": 7.0,
+      "gra": 8.0,
+      "p": 7.5,
+      "overall": 7.5
+    },
+    {
+      "stt": 9,
+      "transcript": "My favorite color is pink.",
+      "fc": 7.0,
+      "lr": 7.0,
+      "gra": 8.0,
+      "p": 7.5,
+      "overall": 7.5
+    },
+    {
+      "stt": 10,
+      "transcript": "My favorite weather is snowy.",
+      "fc": 7.0,
+      "lr": 6.5,
+      "gra": 7.0,
+      "p": 7.0,
+      "overall": 7.0
+    },
+    {
+      "stt": 11,
+      "transcript": "My favorite animal is cat.",
+      "fc": 7.0,
+      "lr": 7.0,
+      "gra": 6.5,
+      "p": 7.0,
+      "overall": 7.0
+    },
+    {
+      "stt": 12,
+      "transcript": "I like cats because it's cute and small.",
+      "fc": 7.0,
+      "lr": 7.0,
+      "gra": 6.0,
+      "p": 6.5,
+      "overall": 6.5
+    }
+  ],
+  "Trúc Anh": [
+    {
+      "stt": 1,
+      "transcript": "My name is Trúc Anh.",
+      "fc": 7.0,
+      "lr": 7.0,
+      "gra": 8.0,
+      "p": 8.0,
+      "overall": 7.5
+    },
+    {
+      "stt": 2,
+      "transcript": "It's T-R-U-C-A-N-H.",
+      "fc": 7.0,
+      "lr": 7.0,
+      "gra": 8.0,
+      "p": 8.0,
+      "overall": 7.5
+    },
+    {
+      "stt": 3,
+      "transcript": "I'm 8 years old.",
+      "fc": 7.0,
+      "lr": 7.0,
+      "gra": 8.0,
+      "p": 8.0,
+      "overall": 7.5
+    },
+    {
+      "stt": 4,
+      "transcript": "There are five people in my family.",
+      "fc": 7.0,
+      "lr": 7.0,
+      "gra": 8.0,
+      "p": 7.5,
+      "overall": 7.5
+    },
+    {
+      "stt": 5,
+      "transcript": "They are my dad, my mom, my baby sister, and my aunt and me.",
+      "fc": 7.0,
+      "lr": 7.0,
+      "gra": 7.0,
+      "p": 8.0,
+      "overall": 7.0
+    },
+    {
+      "stt": 6,
+      "transcript": "My favorite food is ice cream.",
+      "fc": 7.0,
+      "lr": 7.0,
+      "gra": 8.0,
+      "p": 7.5,
+      "overall": 7.5
+    },
+    {
+      "stt": 7,
+      "transcript": "My favorite fruit is orange.",
+      "fc": 7.0,
+      "lr": 7.0,
+      "gra": 7.0,
+      "p": 7.5,
+      "overall": 7.0
+    },
+    {
+      "stt": 8,
+      "transcript": "My favorite drink is orange.",
+      "fc": 6.5,
+      "lr": 6.5,
+      "gra": 7.0,
+      "p": 6.0,
+      "overall": 6.5
+    },
+    {
+      "stt": 9,
+      "transcript": "I like windy.",
+      "fc": 7.0,
+      "lr": 7.0,
+      "gra": 7.0,
+      "p": 6.0,
+      "overall": 7.0
+    },
+    {
+      "stt": 10,
+      "transcript": "My favorite animal is rabbit.",
+      "fc": 7.0,
+      "lr": 7.0,
+      "gra": 6.5,
+      "p": 7.5,
+      "overall": 7.0
+    },
+    {
+      "stt": 11,
+      "transcript": "Because it's clever and cute.",
+      "fc": 6.5,
+      "lr": 7.0,
+      "gra": 7.0,
+      "p": 7.5,
+      "overall": 7.0
+    },
+    {
+      "stt": 12,
+      "transcript": "My favorite color is purple and pink.",
+      "fc": 7.0,
+      "lr": 7.0,
+      "gra": 7.0,
+      "p": 7.5,
+      "overall": 7.0
+    }
+  ],
+  "Vinh": [
+    {
+      "stt": 1,
+      "transcript": "MynameisVinh.",
+      "fc": 7.0,
+      "lr": 7.0,
+      "gra": 8.0,
+      "p": 7.0,
+      "overall": 7.0
+    },
+    {
+      "stt": 2,
+      "transcript": "V-I-N-H.",
+      "fc": 7.0,
+      "lr": 7.0,
+      "gra": 8.0,
+      "p": 6.0,
+      "overall": 7.0
+    },
+    {
+      "stt": 3,
+      "transcript": "I'm 8 years old.",
+      "fc": 7.0,
+      "lr": 7.0,
+      "gra": 8.0,
+      "p": 8.0,
+      "overall": 7.5
+    },
+    {
+      "stt": 4,
+      "transcript": "Sixpeople.",
+      "fc": 6.0,
+      "lr": 7.0,
+      "gra": 6.0,
+      "p": 6.0,
+      "overall": 6.0
+    },
+    {
+      "stt": 5,
+      "transcript": "Therearesixpeopleinmyfamily.",
+      "fc": 7.0,
+      "lr": 7.0,
+      "gra": 8.0,
+      "p": 8.5,
+      "overall": 7.5
+    },
+    {
+      "stt": 6,
+      "transcript": "Mymom,Dad,threesister,andme.",
+      "fc": 7.0,
+      "lr": 7.0,
+      "gra": 6.5,
+      "p": 6.0,
+      "overall": 6.5
+    },
+    {
+      "stt": 7,
+      "transcript": "Myfavoritefruitiswatermelon.",
+      "fc": 7.0,
+      "lr": 7.0,
+      "gra": 8.0,
+      "p": 7.0,
+      "overall": 7.0
+    },
+    {
+      "stt": 8,
+      "transcript": "Myfavoritefoodischicken.",
+      "fc": 7.0,
+      "lr": 7.0,
+      "gra": 8.0,
+      "p": 6.5,
+      "overall": 7.0
+    },
+    {
+      "stt": 9,
+      "transcript": "Myfavoriteissoda.",
+      "fc": 6.0,
+      "lr": 6.0,
+      "gra": 6.0,
+      "p": 6.0,
+      "overall": 6.0
+    },
+    {
+      "stt": 10,
+      "transcript": "Myfavoritecolorisblack.",
+      "fc": 7.0,
+      "lr": 7.0,
+      "gra": 8.0,
+      "p": 6.5,
+      "overall": 7.0
+    },
+    {
+      "stt": 11,
+      "transcript": "Myfavoriteweatherissunny.",
+      "fc": 7.0,
+      "lr": 6.0,
+      "gra": 7.0,
+      "p": 8.5,
+      "overall": 7.0
+    },
+    {
+      "stt": 12,
+      "transcript": "Myfavoriteanimalislion.",
+      "fc": 7.0,
+      "lr": 6.0,
+      "gra": 6.0,
+      "p": 6.0,
+      "overall": 6.0
+    },
+    {
+      "stt": 13,
+      "transcript": "Ilikelionbecauseit'sstrong.",
+      "fc": 7.0,
+      "lr": 7.0,
+      "gra": 6.0,
+      "p": 6.5,
+      "overall": 6.5
+    }
+  ],
+  "Đức": [
+    {
+      "stt": 1,
+      "transcript": "My name is Đứ c.",
+      "fc": 7.0,
+      "lr": 7.0,
+      "gra": 8.0,
+      "p": 8.0,
+      "overall": 7.5
+    },
+    {
+      "stt": 2,
+      "transcript": "D-U-C.",
+      "fc": 7.0,
+      "lr": 7.0,
+      "gra": 8.0,
+      "p": 8.0,
+      "overall": 7.5
+    },
+    {
+      "stt": 3,
+      "transcript": "It's three.",
+      "fc": 6.5,
+      "lr": 6.0,
+      "gra": 6.5,
+      "p": 6.5,
+      "overall": 6.5
+    },
+    {
+      "stt": 4,
+      "transcript": "There are three people in my family.",
+      "fc": 6.5,
+      "lr": 7.0,
+      "gra": 8.0,
+      "p": 8.0,
+      "overall": 7.5
+    },
+    {
+      "stt": 5,
+      "transcript": "Mother, father, and me.",
+      "fc": 6.5,
+      "lr": 7.0,
+      "gra": 6.5,
+      "p": 7.0,
+      "overall": 7.0
+    },
+    {
+      "stt": 6,
+      "transcript": "My favorite fruit is strawberry.",
+      "fc": 7.0,
+      "lr": 7.0,
+      "gra": 6.5,
+      "p": 7.0,
+      "overall": 7.0
+    },
+    {
+      "stt": 7,
+      "transcript": "My favorite fruit is... My favorite fruit is sweet.",
+      "fc": 6.0,
+      "lr": 7.0,
+      "gra": 7.0,
+      "p": 7.0,
+      "overall": 7.0
+    },
+    {
+      "stt": 8,
+      "transcript": "My favorite drink is cola.",
+      "fc": 7.0,
+      "lr": 7.0,
+      "gra": 8.0,
+      "p": 7.0,
+      "overall": 7.0
+    },
+    {
+      "stt": 9,
+      "transcript": "I like green.",
+      "fc": 7.0,
+      "lr": 6.5,
+      "gra": 8.0,
+      "p": 7.0,
+      "overall": 7.0
+    },
+    {
+      "stt": 10,
+      "transcript": "I like snowy.",
+      "fc": 6.5,
+      "lr": 6.5,
+      "gra": 6.5,
+      "p": 7.0,
+      "overall": 6.5
+    },
+    {
+      "stt": 11,
+      "transcript": "My favorite animal is mantis.",
+      "fc": 7.0,
+      "lr": 7.0,
+      "gra": 6.5,
+      "p": 7.5,
+      "overall": 7.0
+    },
+    {
+      "stt": 12,
+      "transcript": "Because they can eat insects.",
+      "fc": 7.0,
+      "lr": 7.0,
+      "gra": 7.5,
+      "p": 8.0,
+      "overall": 7.5
+    }
+  ]
+}

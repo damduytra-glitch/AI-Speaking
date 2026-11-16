@@ -42,6 +42,7 @@ INCLUDE_FILES = [
     "infer/score_cut_turns.py",
     "infer/transcribe.py",
     "run_two_stage_pipeline.py",
+    "tests/all_students_ground_truth.json",
     "classroom_lang/__init__.py",
     "classroom_lang/vad_diarize.py",
     "classroom_lang/analyzer.py",
@@ -152,7 +153,7 @@ setup_cells.append(code_cell([
     "print('Installing Rust (required for DeepFilterNet on Python 3.12)...')\n",
     "os.system(\"curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y\")\n",
     "os.environ['PATH'] = f\"/root/.cargo/bin:{os.environ.get('PATH', '')}\"\n",
-    "subprocess.run([sys.executable, '-m', 'pip', 'install', '-q', 'huggingface_hub', 'addict', 'modelscope', 'deepfilternet'], check=True)\n",
+    "subprocess.run([sys.executable, '-m', 'pip', 'install', '-q', 'huggingface_hub', 'hf-transfer', 'addict', 'modelscope', 'deepfilternet'], check=True)\n",
     "subprocess.run([sys.executable, '-m', 'pip', 'install', '-U', '-q', f'numpy=={np_ver}'], check=True)\n",
     "import os, re, shutil\n",
     "from modelscope.hub.snapshot_download import snapshot_download\n",
@@ -178,6 +179,7 @@ setup_cells.append(code_cell([
     "import torch\n",
     "import shutil\n",
     "from huggingface_hub import snapshot_download\n",
+    "os.environ['HF_HUB_ENABLE_HF_TRANSFER'] = '1'\n",
     "os.environ['HF_HUB_CACHE'] = '/tmp/hf_cache'\n",
     "\n",
     "TARGET_DIR = '/kaggle/working/SpeakAI-Eval'\n",
@@ -227,6 +229,18 @@ setup_cells.append(code_cell([
     "print('Offline models ready!')\n"
 ]))
 
+setup_cells.append(md_cell([
+    "---\n",
+    "## 📌 HƯỚNG DẪN KẾT NỐI SANG NOTEBOOK RUN (TRÁNH PHẢI TẢI LẠI MODEL)\n",
+    "\n",
+    "Mỗi notebook trên Kaggle chạy ở một máy ảo (session) hoàn toàn độc lập.\n",
+    "Để notebook `SpeakAI-Kaggle-Run.ipynb` sử dụng được các model vừa tải về mà **KHÔNG BỊ TẢI LẠI (mất 10-15 phút)**, bạn chỉ cần:\n",
+    "1. Ở notebook này (`SpeakAI-Kaggle-Setup.ipynb`), bấm nút **Save Version** (chọn **Save & Run All (Commit)**) -> Bấm **Save**.\n",
+    "2. Khi quá trình commit hoàn thành, mở notebook **`SpeakAI-Kaggle-Run.ipynb`**.\n",
+    "3. Ở cột bên phải (mục **Input**), bấm **+ Add Input** -> chọn tab **Notebook Outputs** (hoặc **Your Work**) -> chọn **`SpeakAI-Kaggle-Setup`**.\n",
+    "4. Toàn bộ model Qwen3-ASR (3.5GB), WavLM (1.2GB) và mã nguồn sẽ xuất hiện trong `/kaggle/input/`, notebook Run sẽ nạp offline trong **3 - 5 giây**!\n"
+]))
+
 # =============================================================================
 # 2. RUN NOTEBOOK
 # =============================================================================
@@ -261,10 +275,11 @@ run_cells.append(code_cell([
     "    'numpy>=1.24.0', 'scipy>=1.10.0', 'soundfile>=0.12.1', 'nltk>=3.8.1',\n",
     "    'python-dotenv>=1.0.0', 'deepfilternet', 'noisereduce>=3.0.0',\n",
     "    'addict', 'modelscope', 'speechbrain>=1.0.0', 'huggingface_hub>=0.23.0',\n",
-    "    'safetensors>=0.4.0', 'fastapi', 'uvicorn',\n",
+    "    'hf-transfer', 'safetensors>=0.4.0', 'fastapi', 'uvicorn',\n",
     "    'python-multipart', 'requests>=2.31.0', 'nest-asyncio',\n",
     "    'language-tool-python', 'spacy', 'wordfreq',\n",
     "]\n",
+    "os.environ['HF_HUB_ENABLE_HF_TRANSFER'] = '1'\n",
     "subprocess.run([sys.executable, '-m', 'pip', 'install', '-q'] + pkgs, check=True)\n",
     "# Bắt buộc nâng cấp transformers>=5.0.0 để hỗ trợ kiến trúc Qwen3-ASR (qwen3_asr)\n",
     "subprocess.run([sys.executable, '-m', 'pip', 'install', '-U', '-q', 'transformers>=5.0.0', 'accelerate>=0.26.0'], check=True)\n",
@@ -335,14 +350,21 @@ run_cells.append(code_cell([
     "else:\n",
     "    print('⚠️ Không tìm thấy l2_mdd_best.pt — chỉ dùng pronunciation model')\n",
     "if QWEN3_PATH:\n",
-    "    print(f'✅ Tìm thấy Qwen3-ASR-1.7B offline tại: {QWEN3_PATH}')\n",
+    "    print(f'✅ Tìm thấy Qwen3-ASR-1.7B offline tại: {QWEN3_PATH} (load offline ngay trong vài giây)')\n",
     "else:\n",
     "    q_cand = f'{MODEL_DIR}/pretrained_models/Qwen3-ASR-1.7B-hf'\n",
     "    if os.path.isdir(q_cand) and len(os.listdir(q_cand)) > 0:\n",
     "        QWEN3_PATH = q_cand\n",
-    "        print(f'✅ Tìm thấy Qwen3-ASR-1.7B offline tại: {QWEN3_PATH}')\n",
+    "        print(f'✅ Tìm thấy Qwen3-ASR-1.7B offline tại: {QWEN3_PATH} (load offline ngay trong vài giây)')\n",
     "    else:\n",
-    "        print('⚠️ Không tìm thấy Qwen3-ASR offline trong dataset — sẽ tự động tải từ Hugging Face')\n",
+    "        print('⚠️' * 40)\n",
+    "        print('⚠️ CẢNH BÁO: Không tìm thấy Qwen3-ASR-1.7B offline trong dataset /kaggle/input!')\n",
+    "        print('⚠️ Hệ thống đang phải tải 3.5GB từ Hugging Face Hub (Qwen/Qwen3-ASR-1.7B-hf).')\n",
+    "        print('⚠️ Đã kích hoạt hf-transfer đa luồng để tăng tốc tối đa.')\n",
+    "        print('⚠️ MẸO: Để KHÔNG phải tải lại ở các lần sau:')\n",
+    "        print('    1. Chạy SpeakAI-Kaggle-Setup -> Bấm Save Version (Save & Run All Commit).')\n",
+    "        print('    2. Ở notebook Run này, bấm + Add Input -> chọn Output của Setup.')\n",
+    "        print('⚠️' * 40)\n",
     "sys.path.insert(0, SOURCE_DIR)\n",
     "sys.path.insert(0, f'{SOURCE_DIR}/speaker-diarize')\n",
     "os.chdir(SOURCE_DIR)\n",
@@ -390,11 +412,11 @@ run_cells.append(code_cell([
     "else:\n",
     "    print('⚠️ Không phát hiện GPU CUDA — đang chạy trên CPU (rất chậm).')\n",
     "\n",
-    "print(f'Loading Registration Model on {asr_dev}...')\n",
+    "print(f'\\n[1/2] Loading Registration Model (ERes2Net) on {asr_dev}...')\n",
     "extract_embedder = ERes2NetEmbedder(device=asr_dev)\n",
-    "print(f'Registration Embedder ready on {asr_dev}!')\n",
+    "print(f'✅ Registration Embedder ready on {asr_dev}!')\n",
     "\n",
-    "print(f'Loading SpeakingPipeline (ASR & Diarize on {asr_dev}, Scoring on {score_dev})...')\n",
+    "print(f'\\n[2/2] Loading SpeakingPipeline (ASR & Diarize on {asr_dev}, Scoring on {score_dev})...')\n",
     "pipeline = SpeakingPipeline(\n",
     "    config_path=tmp_config,\n",
     "    device=score_dev,\n",
@@ -402,9 +424,9 @@ run_cells.append(code_cell([
     "    diarize_device=asr_dev,\n",
     "    l2_mdd_ckpt=L2_MDD_PATH,\n",
     ")\n",
-    "print('Pipeline ready!')\n",
+    "print('✅ SpeakingPipeline ready!')\n",
     "\n",
-    "print('Setup complete!')\n"
+    "print('🎉 ALL SYSTEMS READY!')\n"
 ]))
 
 run_cells.append(md_cell([

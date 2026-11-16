@@ -37,7 +37,9 @@ class WavLMEncoder(nn.Module):
         super().__init__()
         if model_name and not os.path.exists(model_name) and (model_name.startswith("/") or "\\" in model_name):
             model_name = "microsoft/wavlm-large"
-        self.wavlm = WavLMModel.from_pretrained(model_name)
+        is_local = bool(model_name and os.path.isdir(model_name))
+        load_kw = {"local_files_only": True} if is_local else {}
+        self.wavlm = WavLMModel.from_pretrained(model_name, **load_kw)
         self.output_dim = self.wavlm.config.hidden_size  # 1024 for large
 
         if freeze and not use_lora:
