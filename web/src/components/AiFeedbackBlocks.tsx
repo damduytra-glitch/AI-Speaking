@@ -245,7 +245,14 @@ export function DialogueTimeline({ turns }: { turns: DialogueTurn[] }) {
       {turns.map((turn, idx) => {
         const isTeacher = turn.role === 'teacher';
         const sc = turn.scores;
-        const hasScores = Boolean(turn.scored && sc && sc.total !== undefined);
+        const hasScores = Boolean(
+          turn.scored && sc && (sc.total !== undefined || sc.score_total !== undefined || sc.overall !== undefined),
+        );
+        const totalVal = sc?.overall ?? sc?.score_total ?? sc?.total ?? 0;
+        const pVal = sc?.p ?? sc?.score_pronunciation ?? sc?.accuracy;
+        const fcVal = sc?.fc ?? sc?.score_fluency_coherence ?? sc?.context;
+        const lrVal = sc?.lr ?? sc?.score_lexical ?? sc?.lexical;
+        const graVal = sc?.gra ?? sc?.score_grammar ?? sc?.grammar;
         const badPhonemes = (turn.errors?.phonemes || []).filter(
           (p) => p.is_suspicious || (p.error_probability !== undefined && p.error_probability >= 0.5),
         );
@@ -320,18 +327,40 @@ export function DialogueTimeline({ turns }: { turns: DialogueTurn[] }) {
 
                 {hasScores && sc ? (
                   <div className="flex flex-wrap items-center gap-1.5 text-[11px]">
-                    <span className="rounded-full bg-gradient-to-r from-indigo-600 to-sky-500 px-2.5 py-0.5 font-bold text-white shadow-sm">
-                      Tổng: {(sc.total || 0).toFixed(1)}
+                    <span
+                      className="rounded-full bg-gradient-to-r from-indigo-600 to-sky-500 px-2.5 py-0.5 font-bold text-white shadow-sm"
+                      title="Điểm IELTS tổng của câu (Overall)"
+                    >
+                      Tổng: {Number(totalVal).toFixed(1)}
                     </span>
-                    <span className="rounded-lg border border-slate-200 bg-slate-50 px-2 py-0.5 text-slate-600 font-medium">
-                      Phát âm: {(sc.accuracy || 0).toFixed(1)}
+                    <span
+                      className="rounded-lg border border-emerald-200 bg-emerald-50 px-2 py-0.5 font-semibold text-emerald-700"
+                      title="Phát âm (Pronunciation - P)"
+                    >
+                      P: {Number(pVal ?? totalVal).toFixed(1)}
                     </span>
-                    <span className="rounded-lg border border-slate-200 bg-slate-50 px-2 py-0.5 text-slate-600 font-medium">
-                      Trôi chảy: {(sc.fluency || 0).toFixed(1)}
+                    <span
+                      className="rounded-lg border border-sky-200 bg-sky-50 px-2 py-0.5 font-semibold text-sky-700"
+                      title="Lưu loát & Mạch lạc (Fluency & Coherence - FC)"
+                    >
+                      FC: {Number(fcVal ?? totalVal).toFixed(1)}
                     </span>
-                    <span className="rounded-lg border border-slate-200 bg-slate-50 px-2 py-0.5 text-slate-600 font-medium">
-                      Ngữ điệu: {(sc.prosodic || 0).toFixed(1)}
-                    </span>
+                    {lrVal != null && (
+                      <span
+                        className="rounded-lg border border-amber-200 bg-amber-50 px-2 py-0.5 font-semibold text-amber-700"
+                        title="Vốn từ vựng (Lexical Resource - LR)"
+                      >
+                        LR: {Number(lrVal).toFixed(1)}
+                      </span>
+                    )}
+                    {graVal != null && (
+                      <span
+                        className="rounded-lg border border-indigo-200 bg-indigo-50 px-2 py-0.5 font-semibold text-indigo-700"
+                        title="Ngữ pháp & Cấu trúc (Grammar - GRA)"
+                      >
+                        GRA: {Number(graVal).toFixed(1)}
+                      </span>
+                    )}
                   </div>
                 ) : (
                   <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-0.5 text-[11px] font-medium text-slate-500">

@@ -92,6 +92,15 @@ export interface PronunciationScores {
   context?: number | null;
   lexical?: number | null;
   overall?: number | null;
+  p?: number | null;
+  fc?: number | null;
+  lr?: number | null;
+  gra?: number | null;
+  score_pronunciation?: number | null;
+  score_fluency_coherence?: number | null;
+  score_lexical?: number | null;
+  score_grammar?: number | null;
+  score_total?: number | null;
 }
 
 export interface GrammarErrorItem {

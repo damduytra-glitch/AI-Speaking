@@ -349,6 +349,19 @@ def export_diarization_clips(
             if en > st:
                 other_intervals.append((st, en))
 
+    # Guard margins against other-speaker bleed at turn transitions
+    guard_margin_sec = 0.05
+    cleaned_merged: List[tuple[float, float]] = []
+    for start, end in merged:
+        for o_st, o_en in other_intervals:
+            if o_st < start and o_en >= start - guard_margin_sec:
+                start = max(start, o_en + guard_margin_sec)
+            if o_en > end and o_st <= end + guard_margin_sec:
+                end = min(end, o_st - guard_margin_sec)
+        if end > start + 0.15:
+            cleaned_merged.append((start, end))
+    merged = cleaned_merged
+
     for start, end in merged:
         s = max(0, int(start * sr))
         e = min(mono.shape[0], int(end * sr))

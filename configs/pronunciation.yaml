@@ -29,12 +29,14 @@ inference:
   max_upload_mb: 300
 
 asr:
-  engine: qwen3  # Qwen3-ASR (Qwen/Qwen3-ASR-1.7B-hf): chuẩn xác, triệt tiêu ảo giác, có chấm phẩy và chữ thường/hoa
-  model_name: Qwen/Qwen3-ASR-1.7B-hf
+  engine: whisper  # Whisper Large-v3-Turbo English-only, Beam Search 5, Dynamic Context Prompting
+  model_name: openai/whisper-large-v3-turbo
   language: en
+  allowed_languages: [en]
+  beam_size: 5
   device: cuda
   torch_dtype: float16
-  max_new_tokens: 128
+  max_new_tokens: 440
   lang_id:
     enabled: false
     drop_languages: [vi, vie, vietnamese]
@@ -42,42 +44,8 @@ asr:
     text_vi_regex: false
 
 eligibility:
-  min_duration_sec: 0.5
+  min_duration_sec: 0.3
   min_words: 1
-  backchannel_words:
-    - 'yes'
-    - 'no'
-    - yeah
-    - yep
-    - ok
-    - okay
-    - sure
-    - uh
-    - um
-    - ah
-    - hmm
-    - mmm
-    - mm
-    - erm
-    - er
-    - mhm
-    - right
-    - alright
-    - oh
-    - cool
-    - thank you
-    - thanks
-    - bye
-    - bye bye
-    - hello
-    - hi
-    - oh my god
-    - my god
-    - oh god
-    - gosh
-    - oops
-    - jeez
-    - oh dear
 
 wavlm:
   model_name: microsoft/wavlm-large
@@ -143,3 +111,6 @@ diarization:
   vad_threshold_db: -42.0
   consecutive_merge_gap_sec: 2.5
   min_similarity_threshold: 0.40
+
+asr_correction:
+  enabled: true

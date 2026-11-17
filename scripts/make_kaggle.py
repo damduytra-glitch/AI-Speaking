@@ -32,6 +32,7 @@ INCLUDE_FILES = [
     "models/transformer_encoder.py",
     "models/wavlm_encoder.py",
     "infer/__init__.py",
+    "infer/asr_error_correction.py",
     "infer/device_utils.py",
     "infer/diarize_and_transcribe.py",
     "infer/hybrid_nlp_scorer.py",

@@ -19,6 +19,8 @@ from infer.lang_id import is_vietnamese_segment
 from infer.pronunciation import Predictor, L2MDDPredictor
 from infer.transcribe import transcribe_audio, transcribe_audio_with_meta
 from infer.device_utils import resolve_device
+from infer.diarize_and_transcribe import build_context_prompt_for_turn
+from infer.asr_error_correction import AsrErrorCorrector
 from models.pronunciation_scorer import PronunciationScorer
 from paths import SPEAKER_DIARIZE_DIR, PRONUNCIATION_CONFIG, ROOT
 
@@ -29,22 +31,7 @@ SCORE_KEYS = (
     "p", "fc", "lr", "gra",
 )
 
-DEFAULT_BACKCHANNELS = frozenset({
-    "yes", "no", "yeah", "yep", "ok", "okay", "sure", "uh", "um", "ah", "hmm",
-    "mmm", "mm", "erm", "er", "mhm", "huh",
-    "right", "alright", "oh", "cool", "thank you", "thanks", "bye", "bye bye",
-    "hello", "hi", "goodbye", "fine", "yup",
-    "oh my god", "my god", "oh god", "gosh", "oops", "jeez", "oh dear",
-})
 
-INCOMPLETE_CONNECTORS = frozenset({
-    "is", "are", "was", "were", "my", "the", "a", "an", "and", "or", "for", "to", "in", "at", "with", "of",
-    "like", "lie", "love", "want", "prefer", "because",
-})
-
-DEPENDENT_START_WORDS = frozenset({
-    "in", "at", "on", "with", "for", "of", "to", "into", "and", "or",
-})
 
 
 def _is_incomplete_turn(transcript: str) -> bool:
@@ -125,21 +112,9 @@ def check_scoring_eligibility(
     duration_sec: float,
     config: Optional[Dict[str, Any]] = None,
 ) -> Tuple[bool, str]:
-    """
-    Check if utterance has sufficient phonological content to be scored.
-    Returns (is_eligible, reason).
-    """
+    """Check if utterance has audio duration and content words to be scored."""
     if not transcript or not transcript.strip():
         return False, "empty_transcript"
-
-    cfg = config or {}
-    min_duration = float(cfg.get("min_duration_sec", 0.5))
-    min_words = int(cfg.get("min_words", 1))
-    raw_backchannels = cfg.get("backchannel_words")
-    if raw_backchannels:
-        backchannels = frozenset(str(w).lower().strip() for w in raw_backchannels)
-    else:
-        backchannels = DEFAULT_BACKCHANNELS
 
     clean_words = [
         w.lower().strip() for w in re.sub(r"[^\w\s']", " ", transcript).split() if w.strip()
@@ -147,19 +122,7 @@ def check_scoring_eligibility(
     if not clean_words:
         return False, "no_content_words"
 
-    # 1. Utterance matches a multi-word backchannel phrase (e.g. "thank you", "bye bye")
-    norm_phrase = " ".join(clean_words)
-    if norm_phrase in backchannels:
-        return False, "short_backchannel"
-
-    # Or each individual word is a backchannel/filler token (e.g. "oh yeah", "yes ok", "mmm")
-    if all(w in backchannels for w in clean_words):
-        return False, "short_backchannel"
-
-    # 2. Utterance is too short in duration (aborted false starts < min_duration) or too few content words
-    if duration_sec > 0 and duration_sec < min_duration:
-        return False, "too_short"
-    if duration_sec > 0 and duration_sec < min_duration and len(clean_words) < min_words:
+    if duration_sec > 0 and duration_sec < 0.3:
         return False, "too_short"
 
     return True, "eligible"
@@ -481,25 +444,13 @@ class SpeakingPipeline:
         words_detail: List[Dict[str, Any]],
         config: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
-        """Fine-tune acoustic scores using candidate proficiency ceiling and actual L2-MDD diagnostic phoneme errors,
-        strictly rounded to 0.5 band steps."""
+        """Fine-tune acoustic pronunciation scores using actual L2-MDD diagnostic phoneme errors,
+        strictly rounded to 0.5 band steps. Zero hardcoded ceilings or score brackets."""
         calibrated = dict(pron_scores)
 
-        base_acc = float(pron_scores.get("accuracy", 7.0))
-        raw_pro = float(pron_scores.get("prosodic", 7.0))
-        num_words = len(words_detail) if words_detail else 0
-
-        # 1. Candidate proficiency ceiling mapping
-        if base_acc >= 8.5:
-            cand_p = 8.5 if (num_words >= 6 and raw_pro >= 7.5) else (8.0 if num_words >= 4 else 7.5)
-        elif base_acc >= 7.5:
-            cand_p = 7.5
-        elif base_acc >= 6.5:
-            cand_p = 7.0
-        elif base_acc >= 5.5:
-            cand_p = 6.5
-        else:
-            cand_p = 6.0
+        # 1. Base acoustic pronunciation score directly from WavLM + SpeechOcean762 model
+        base_acc = float(pron_scores.get("accuracy", pron_scores.get("total", 7.0)))
+        cand_p = base_acc
 
         # 2. L2-MDD diagnostic fine-tuning based on actual phoneme errors
         cfg = config or {}
@@ -508,7 +459,6 @@ class SpeakingPipeline:
         if pen_enabled and words_detail:
             num_crit = 0
             num_warn = 0
-            in_name = False
             for idx_w, w in enumerate(words_detail):
                 w_str = str(w.get("word", "")).lower().strip()
                 # Skip single-letter spelling tokens or hyphenated spellings
@@ -517,14 +467,12 @@ class SpeakingPipeline:
                 # Skip words containing non-ASCII / Vietnamese diacritics
                 if any(ord(c) > 127 for c in w_str):
                     continue
-                # Skip personal proper names following name introductions ("name is", "i am", "called")
+                # Skip proper names (e.g. following introduction phrases)
                 if idx_w > 0:
                     prev_w = str(words_detail[idx_w - 1].get("word", "")).lower().strip()
                     prev2_w = str(words_detail[idx_w - 2].get("word", "")).lower().strip() if idx_w > 1 else ""
                     if (prev2_w == "name" and prev_w == "is") or prev_w in ("am", "called"):
-                        in_name = True
-                if in_name:
-                    continue
+                        continue
                 for ph in w.get("phonemes") or w.get("phones") or []:
                     st = ph.get("status")
                     if st == "bad":
@@ -536,9 +484,11 @@ class SpeakingPipeline:
                 cand_p -= 1.0
             elif num_crit >= 1 or num_warn >= 3:
                 cand_p -= 0.5
+            elif num_warn >= 1:
+                cand_p -= 0.25
 
         from infer.hybrid_nlp_scorer import round_to_half
-        calibrated_p = round_to_half(max(5.5, min(9.0, cand_p)))
+        calibrated_p = round_to_half(max(1.0, min(9.0, cand_p)))
         calibrated["accuracy"] = calibrated_p
         calibrated["total"] = calibrated_p
         calibrated["pronunciation"] = calibrated_p
@@ -559,11 +509,11 @@ class SpeakingPipeline:
         """
         Dynamically evaluates a single conversational turn across 4 IELTS pillars:
         - P (Pronunciation): Directly from acoustic model (WavLM-Large) + L2-MDD phoneme penalty
-        - FC (Fluency & Coherence): Candidate baseline 7.0 + Speech Rate (WPM) + Hesitation / Pause detection
+        - FC (Fluency & Coherence): Acoustic fluency baseline + Speech Rate (WPM) + Hesitation / Pause detection
         - LR (Lexical Resource): spaCy lemmatization + wordfreq Zipf scale + NLTK lexical diversity
         - GRA (Grammar Range & Accuracy): spaCy syntactic clause analysis + LanguageTool grammar error detection
         
-        Zero hardcoded student names. Completely generalized for any unseen speaker.
+        Zero hardcoded scores, questions, or student names.
         All 4 individual criteria strictly rounded to 0.5 band increments.
         Turn overall is unrounded arithmetic mean rounded to 1 decimal place.
         """
@@ -581,26 +531,26 @@ class SpeakingPipeline:
         num_words = len(words)
 
         # -------------------------------------------------------------
-        # 1. PRONUNCIATION (P) - Acoustic DL + Candidate Scale + L2-MDD
+        # 1. PRONUNCIATION (P) - Acoustic DL + L2-MDD (Calibrated)
         # -------------------------------------------------------------
         p_val = float(acoustic_scores.get("pronunciation", acoustic_scores.get("total", acoustic_scores.get("accuracy", 7.0))))
         r_p = round_to_half(p_val)
 
         # -------------------------------------------------------------
-        # 2. FLUENCY & COHERENCE (FC) - Baseline 7.0 + Hesitation & Rate
+        # 2. FLUENCY & COHERENCE (FC) - Acoustic Fluency + WPM + Hesitation
         # -------------------------------------------------------------
         wpm = (num_words / duration_sec * 60.0) if duration_sec > 0.5 else 110.0
         has_filler = bool(re.search(r"\b(um|uh|er|erm)\b", clean_text, re.I)) or "..." in clean_text
         has_repetition = any(words[k] == words[k+1] for k in range(len(words)-1)) if len(words) > 1 else False
         hesitation = (has_filler or has_repetition)
 
-        fc_base = 7.0
+        fc_base = raw_flu
         hesitation_pen = 0.5 if hesitation else 0.0
         if wpm < 70.0 and duration_sec > 2.0:
             hesitation_pen = min(1.0, hesitation_pen + 0.5)
 
         smooth_boost = 0.5 if (num_words >= 7 and not hesitation and raw_flu >= 7.5 and duration_sec >= 2.0) else 0.0
-        r_fc = round_to_half(max(5.5, min(8.5, fc_base - hesitation_pen + smooth_boost)))
+        r_fc = round_to_half(max(1.0, min(9.0, fc_base - hesitation_pen + smooth_boost)))
 
         # -------------------------------------------------------------
         # 3. LEXICAL RESOURCE (LR) - spaCy + wordfreq + NLTK
@@ -615,48 +565,12 @@ class SpeakingPipeline:
         r_gra = gra_info.get("gra", 7.0)
 
         # -------------------------------------------------------------
-        # 5. TURN-SPECIFIC COMMUNICATIVE INTENT ADJUSTMENT (RUBRIC)
+        # 5. CONVERSATIONAL PRAGMATICS (General minor clauses / greetings)
         # -------------------------------------------------------------
-        tp_lower = (teacher_prompt or "").lower()
-        tr_lower = clean_text.lower()
-
-        if any(k in tp_lower for k in ["goodbye", "bye"]) or tr_lower in ["goodbye.", "bye."]:
-            # Farewell formulaic closing
-            r_gra = 7.0
-            r_lr = 7.0
-            r_fc = 7.0
-            r_p = max(r_p, 7.0)
-        elif any(k in tp_lower for k in ["spell", "call"]) or ("-" in clean_text and any(c.isalpha() for c in clean_text)):
-            # Spelling turn
-            r_gra = 8.0
-            r_lr = 7.0
-            r_fc = 7.0
-            r_p = max(r_p, 6.5)
-        elif "name" in tp_lower or bool(re.search(r"\b(my\s+name\s+is|i\s+am|i'm)\b", clean_text, re.I)):
-            # Introduction
-            r_gra = 8.0
-            r_lr = 7.0
-            r_fc = 7.0
-        elif any(k in tp_lower for k in ["how old", "age"]) or "years old" in tr_lower:
-            # Age inquiry
-            r_gra = 8.0
-            r_lr = 7.0
-            r_fc = 7.0
-        elif any(k in tp_lower for k in ["who", "they"]) or any(w in words for w in ["mother", "father", "mom", "dad", "sister", "brother", "grandma", "aunt"]):
-            # Family listing (pragmatically valid noun phrases)
+        # In English linguistics, formulaic salutations / farewells ("Hello", "Goodbye", "Thank you")
+        # are pragmatically complete speech acts without subject+verb; do not penalize GRA as fragments.
+        if clean_text.lower().rstrip(".!") in {"hello", "hi", "goodbye", "bye", "thank you", "thanks"}:
             r_gra = max(r_gra, 7.0)
-            r_lr = max(r_lr, 7.0)
-        elif "how many" in tp_lower or bool(re.search(r"\b(three|four|five|six|seven|eight)\s+people\b", tr_lower)):
-            # Quantity response
-            if num_words <= 3:
-                r_gra = 6.5
-                r_lr = 6.5
-                r_fc = 6.5
-                r_p = min(r_p, 7.0)
-        elif "why" in tp_lower or "because" in words:
-            # Subordinate reason clause
-            if "because" in words and num_words >= 5:
-                r_gra = max(r_gra, 7.5)
 
         # -------------------------------------------------------------
         # OVERALL SCORE (Unrounded arithmetic mean, 1 decimal)
@@ -691,12 +605,13 @@ class SpeakingPipeline:
         lang: Optional[str],
         score: bool = True,
         role: str = "student",
+        prompt: Optional[str] = None,
     ) -> Tuple[Optional[Dict[str, Any]], bool]:
         """Returns (sentence_dict, was_vi_filtered)."""
         if not use_asr:
             return None, False
         try:
-            meta = transcribe_audio_with_meta(seg["path"], asr_config=self._asr_cfg)
+            meta = transcribe_audio_with_meta(seg["path"], asr_config=self._asr_cfg, prompt=prompt)
             clean_tr = meta.get("text", "").strip()
             raw_tr = meta.get("raw_text", "").strip()
             detected_lang = meta.get("language", "en")
@@ -912,6 +827,7 @@ class SpeakingPipeline:
         lang: Optional[str] = None,
         score: bool = True,
         role: Optional[str] = None,
+        teacher_sentences: Optional[List[Dict[str, Any]]] = None,
     ) -> Dict[str, Any]:
         fb = self.enable_feedback if feedback is None else feedback
         if not score:
@@ -941,8 +857,16 @@ class SpeakingPipeline:
         sentences: List[Dict[str, Any]] = []
         filtered_vi = 0
         for seg in segments:
+            s_prompt = None
+            if teacher_sentences and str(role).lower() == "student":
+                s_start = seg.get("start_sec", 0.0)
+                prec = [t for t in teacher_sentences if t.get("start_sec", 0) < s_start and t.get("end_sec", 0) <= s_start + 1.5]
+                if prec:
+                    t_text = prec[-1].get("transcript", "")
+                    s_prompt = build_context_prompt_for_turn(t_text)
+
             item, was_vi = self._process_segment(
-                seg, use_asr=use_asr, lang=lang, score=score, role=role,
+                seg, use_asr=use_asr, lang=lang, score=score, role=role, prompt=s_prompt,
             )
             if was_vi:
                 filtered_vi += 1
@@ -1070,6 +994,44 @@ class SpeakingPipeline:
                 "message": f"{role}: không có câu nói tiếng Anh hợp lệ sau nhận diện",
             }
 
+        # Apply ASR Error Correction if role is student
+        if str(role).lower() == "student" and sentences and self.config.get("asr_correction", {}).get("enabled", True):
+            try:
+                corrector = AsrErrorCorrector(enable_llm=True)
+                candidate_turns = []
+                for idx, sent in enumerate(sentences, start=1):
+                    s_start = sent.get("start_sec", 0.0)
+                    t_prompt = None
+                    if teacher_sentences:
+                        prec = [t for t in teacher_sentences if t.get("start_sec", 0) < s_start and t.get("end_sec", 0) <= s_start + 1.5]
+                        if prec:
+                            t_prompt = prec[-1].get("transcript", "")
+                    candidate_turns.append({
+                        "turn_id": idx,
+                        "raw_transcript": sent.get("transcript", ""),
+                        "transcript": sent.get("transcript", ""),
+                        "teacher_prompt": t_prompt,
+                    })
+                corrected = corrector.correct_turns(candidate_turns)
+                for sent, corr in zip(sentences, corrected):
+                    new_tr = corr.get("transcript", "").strip()
+                    old_tr = sent.get("transcript", "").strip()
+                    if new_tr and new_tr != old_tr:
+                        sent["transcript"] = new_tr
+                        sent["raw_transcript"] = old_tr
+                        if sent.get("scored", False):
+                            try:
+                                track = self.assess_track(
+                                    sent["audio"], new_tr, feedback=False, lang=lang,
+                                    feedback_mode="local", truncate=False, apply_preprocess=False,
+                                    duration_sec=sent.get("duration_sec", 0.0),
+                                )
+                                sent.update(track)
+                            except Exception as re_err:
+                                print(f"[{role}] Re-assessment notice: {re_err}")
+            except Exception as asr_corr_err:
+                print(f"[{role}] AsrErrorCorrector notice: {asr_corr_err}")
+
         summary = _build_summary(
             sentences,
             filtered_vi=filtered_vi,
@@ -1144,6 +1106,7 @@ class SpeakingPipeline:
                 lang=lang,
                 score=True,
                 role="student",
+                teacher_sentences=teacher.get("sentences", []),
             )
             dialogue = _build_dialogue(teacher.get("sentences", []), student.get("sentences", []))
             if fb and student.get("sentences"):
@@ -1335,16 +1298,56 @@ class SpeakingPipeline:
                 "path": str(audio),
             }]
 
+        # Practice mode context prompt
+        practice_prompt = None
+        if reference_text and reference_text.strip():
+            practice_prompt = build_context_prompt_for_turn(reference_text.strip())
+        elif task_type:
+            practice_prompt = build_context_prompt_for_turn(f"Practice topic: {task_type}")
+
         sentences: List[Dict[str, Any]] = []
         filtered_vi = 0
         for seg in segments:
             item, was_vi = self._process_segment(
-                seg, use_asr=use_asr, lang=lang, score=True, role=role,
+                seg, use_asr=use_asr, lang=lang, score=True, role=role, prompt=practice_prompt,
             )
             if was_vi:
                 filtered_vi += 1
             if item:
                 sentences.append(item)
+
+        # Apply ASR Error Correction for practice mode (luyện thi)
+        if sentences and self.config.get("asr_correction", {}).get("enabled", True):
+            try:
+                corrector = AsrErrorCorrector(enable_llm=True)
+                candidate_turns = [
+                    {
+                        "turn_id": idx + 1,
+                        "raw_transcript": s.get("transcript", ""),
+                        "transcript": s.get("transcript", ""),
+                        "teacher_prompt": reference_text or task_type or "Practice",
+                    }
+                    for idx, s in enumerate(sentences)
+                ]
+                corrected = corrector.correct_turns(candidate_turns)
+                for s, corr in zip(sentences, corrected):
+                    new_tr = corr.get("transcript", "").strip()
+                    old_tr = s.get("transcript", "").strip()
+                    if new_tr and new_tr != old_tr:
+                        s["transcript"] = new_tr
+                        s["raw_transcript"] = old_tr
+                        if s.get("scored", False):
+                            try:
+                                track = self.assess_track(
+                                    s["audio"], new_tr, feedback=False, lang=lang,
+                                    feedback_mode="local", truncate=False, apply_preprocess=False,
+                                    duration_sec=s.get("duration_sec", 0.0),
+                                )
+                                s.update(track)
+                            except Exception as re_err:
+                                print(f"[{role}] Re-assessment with corrected text failed: {re_err}")
+            except Exception as asr_corr_err:
+                print(f"[{role}] AsrErrorCorrector practice notice: {asr_corr_err}")
 
         if not sentences:
             print(f"[{role}] Không có lượt nói hợp lệ sau nhận diện", flush=True)

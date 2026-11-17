@@ -23,7 +23,7 @@ WHISPER_SR = 16000
 WHISPER_CHUNK_SEC = 30.0
 WHISPER_DEFAULT_MODEL = "openai/whisper-large-v3"
 LOCAL_WHISPER_DIR = ROOT / "pretrained_models" / "whisper-large-v3"
-DEFAULT_ALLOWED_LANGUAGES = ("en", "vi")
+DEFAULT_ALLOWED_LANGUAGES = ("en",)  # Strictly English-only: no Vietnamese detection/transcription
 
 
 def _local_whisper_ready(local_dir: Path = LOCAL_WHISPER_DIR) -> bool:
@@ -147,7 +147,8 @@ class WhisperTranscriber:
         self.device = torch.device(
             device or resolve_device({"asr": asr_cfg}, asr_cfg.get("device"))
         )
-        self.language = (language or asr_cfg.get("language", "auto")).strip().lower()
+        lang_cand = (language or asr_cfg.get("language", "en")).strip().lower()
+        self.language = "en" if lang_cand in ("auto", "", "none", "en", "english") else lang_cand
 
         raw_allowed = allowed_languages or asr_cfg.get("allowed_languages") or DEFAULT_ALLOWED_LANGUAGES
         norm_allowed = []
@@ -155,10 +156,12 @@ class WhisperTranscriber:
             c = str(code).strip().lower()
             if c and c not in norm_allowed:
                 norm_allowed.append(c)
-        self.allowed_languages: Tuple[str, ...] = tuple(norm_allowed or DEFAULT_ALLOWED_LANGUAGES)
+        norm_allowed = [c for c in norm_allowed if c not in ("vi", "vie", "vietnamese")] or ["en"]
+        self.allowed_languages: Tuple[str, ...] = tuple(norm_allowed)
 
         self.model_name = _resolve_whisper_model_name(model_name)
         self.max_new_tokens = max_new_tokens
+        self.beam_size = int(asr_cfg.get("beam_size", 4))
         dtype = _parse_dtype(torch_dtype, self.device)
 
         is_local = bool(self.model_name and os.path.isdir(self.model_name))
@@ -214,6 +217,8 @@ class WhisperTranscriber:
         and return (best_language, {lang_code: probability}).
         """
         allowed = self.allowed_languages or DEFAULT_ALLOWED_LANGUAGES
+        if len(allowed) <= 1 or allowed == ("en",):
+            return "en", {"en": 1.0}
         default_lang = allowed[0]
 
         if str(self.model_name).lower().endswith(".en"):
@@ -312,10 +317,16 @@ class WhisperTranscriber:
             except Exception:
                 prompt_ids = None
 
+        prompt_len = int(prompt_ids.shape[-1]) if prompt_ids is not None else 0
+        max_tokens = max(1, min(max_tokens, max_pos - prompt_len - 16))
+
+        beam_size = getattr(self, "beam_size", 4)
         gen_kw: Dict[str, Any] = {
             "max_new_tokens": max_tokens,
             "language": target_lang,
             "task": "transcribe",
+            "num_beams": beam_size,
+            "no_repeat_ngram_size": 3,
         }
         if prompt_ids is not None:
             gen_kw["prompt_ids"] = prompt_ids
@@ -334,6 +345,8 @@ class WhisperTranscriber:
             fallback_kw = {
                 "max_new_tokens": max_tokens,
                 "forced_decoder_ids": decoder_ids,
+                "num_beams": beam_size,
+                "no_repeat_ngram_size": 3,
             }
             if prompt_ids is not None:
                 fallback_kw["prompt_ids"] = prompt_ids
@@ -431,6 +444,15 @@ class WhisperTranscriber:
                 raise ValueError(f"Không phát hiện tiếng người trong audio (VAD: peak={peak_amp:.4f}, rms={rms:.4f})")
 
         duration_sec = float(wav.shape[0]) / float(WHISPER_SR)
+
+        # Adaptive Peak Gain Normalization: optimize dynamic range for quiet child speech (-0.5 dBFS)
+        peak_val = float(wav.abs().max())
+        if peak_val > 1e-4:
+            target_peak = 0.95
+            gain = min(target_peak / peak_val, 4.0)
+            if gain > 1.15:
+                wav = wav * gain
+
         chunk_samples = int(WHISPER_CHUNK_SEC * WHISPER_SR)
         target_mode = (language or self.language or "auto").strip().lower()
 

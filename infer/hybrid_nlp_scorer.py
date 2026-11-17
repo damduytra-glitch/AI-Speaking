@@ -96,6 +96,7 @@ def analyze_gra_nlp(text: str, nlp=None, lt=None) -> Dict[str, Any]:
         or bool(re.match(r"^[A-Za-z](-[A-Za-z])+\.?$", clean_text.replace(" ", "")))
     )
 
+    doc = None
     if nlp and not is_spelling and num_words > 0:
         try:
             doc = nlp(clean_text)
@@ -137,13 +138,21 @@ def analyze_gra_nlp(text: str, nlp=None, lt=None) -> Dict[str, Any]:
     ends_with_connective = words[-1] in connectives if words else False
     has_subordinate_conjunction = any(w in connectives for w in words[:-1]) if len(words) > 1 else False
 
-    # Linguistic pattern checks for common learner errors
-    has_adj_obj = bool(re.search(r"\b(like|likes)\s+(windy|snowy|sunny|rainy|cloudy)\b", clean_text, re.I))
+    # General linguistic pattern checks for common learner errors (zero hardcoded word lists)
     has_doubled_verb = len(re.findall(r"\bis\b", clean_text, re.I)) >= 2 and not (has_subordinate_conjunction or num_subordinate >= 1)
-    has_pron_disagree = bool(re.search(r"\b(cats|dogs|animals|rabbits)\s+because\s+it\b", clean_text, re.I))
+    has_sv_agreement_err = bool(re.search(r"\b(they|we|people|these|those)\s+(is|was)\b", clean_text, re.I))
+    has_pron_disagree = bool(re.search(r"\b\w{3,}s\s+because\s+it\b", clean_text, re.I))
     has_missing_head = bool(re.search(r"\bmy\s+favorite\s+is\b", clean_text, re.I))
-    has_missing_article = bool(re.search(r"\b(animal|fruit|drink)\s+is\s+(cat|lion|rabbit|dog|tiger|bear|apple|banana|orange|strawberry)\b", clean_text, re.I))
-    has_sv_agreement_err = bool(re.search(r"\b(things|people|they|we)\s+is\b", clean_text, re.I))
+    has_missing_article = any(
+        "determiner" in str(m.get("message", "")).lower() or "article" in str(m.get("message", "")).lower()
+        for m in grammar_errors
+    )
+    has_adj_obj = False
+    if doc:
+        for tok in doc:
+            if tok.dep_ == "dobj" and tok.pos_ == "ADJ":
+                has_adj_obj = True
+                break
 
     if is_spelling:
         base_gra = 8.0

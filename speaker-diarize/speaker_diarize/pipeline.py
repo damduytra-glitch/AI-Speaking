@@ -279,7 +279,7 @@ class TwoSpeakerSplitter:
 
         stamps = self.vad.get_timestamps(audio, sample_rate=sample_rate)
         is_speech = np.zeros(n, dtype=bool)
-        pad_samples = int(0.2 * sample_rate)
+        pad_samples = int(0.08 * sample_rate)  # 80ms padding prevents cross-speaker transition bleed
         for stamp in stamps:
             s_idx = max(0, stamp["start"] - pad_samples)
             e_idx = min(n, stamp["end"] + pad_samples)

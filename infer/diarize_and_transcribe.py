@@ -38,181 +38,43 @@ from data.silence_split import export_diarization_clips
 from infer.transcribe import transcribe_audio_with_meta
 from infer.lang_id import is_vietnamese_segment
 from infer.device_utils import resolve_device
-
-DEFAULT_BACKCHANNELS = frozenset({
-    "yes", "no", "yeah", "yep", "ok", "okay", "sure", "uh", "um", "ah", "hmm",
-    "mmm", "mm", "erm", "er", "mhm", "huh",
-    "right", "alright", "oh", "cool", "fine", "yup",
-    "oh my god", "my god", "oh god", "gosh", "oops", "jeez", "oh dear",
-})
-
-INCOMPLETE_CONNECTORS = frozenset({
-    "is", "are", "was", "were", "my", "the", "a", "an", "and", "or", "for", "to", "in", "at", "with", "of",
-    "like", "lie", "love", "want", "prefer", "because",
-})
-
-DEPENDENT_START_WORDS = frozenset({
-    "in", "at", "on", "with", "for", "of", "to", "into", "and", "or",
-})
+from infer.asr_error_correction import AsrErrorCorrector
 
 
-def _is_incomplete_turn(transcript: str) -> bool:
-    """Returns True if utterance ends with an incomplete connector, adjective, or incomplete phrase."""
-    words = [w.lower().strip() for w in re.sub(r"[^\w\s']", " ", transcript).split() if w.strip()]
-    if not words:
-        return False
-    # If all tokens are single letters, it is a spelling turn (e.g. S O P H I A)
-    if all(len(w) == 1 for w in words):
-        return False
-    if words[-1] in INCOMPLETE_CONNECTORS:
-        return True
-    if words[-1] in {"favorite", "favourite", "about", "called"}:
-        return True
-    return False
-
-
-def _is_dependent_fragment(transcript: str) -> bool:
-    """Returns True if utterance begins with a dependent preposition/conjunction without a full clause."""
-    words = [w.lower().strip() for w in re.sub(r"[^\w\s']", " ", transcript).split() if w.strip()]
-    if not words:
-        return False
-    if words[0] in DEPENDENT_START_WORDS and len(words) <= 8:
-        has_verb = any(w in {"is", "are", "was", "were", "have", "has", "like", "live"} for w in words)
-        return not has_verb
-    if words[0] in {"is", "are"} and len(words) <= 3:
-        return True
-    return False
-
-
-def _is_false_start(transcript: str, duration_sec: float) -> bool:
-    """Returns True if utterance is a brief aborted start/hesitation (<= 2.2s and <= 3 words, or ends incomplete)."""
-    words = [w.lower().strip() for w in re.sub(r"[^\w\s']", " ", transcript).split() if w.strip()]
-    if not words:
-        return True
-    if all(len(w) == 1 for w in words):
-        return False
-    if "people" in words or "or" in words:
-        return False
-    if duration_sec <= 2.2 and len(words) <= 3:
-        return True
-    if len(words) <= 2 and words[0] in {"uh", "um", "so", "it", "oh", "mmm", "mm", "ah", "is", "and"}:
-        return True
-    return False
-
-
-QUESTION_WORDS = frozenset({
-    "what", "who", "whom", "whose", "how", "where", "why", "which", "when",
-    "spell", "call", "many", "much", "old", "tell", "do", "does", "did",
-    "are", "is", "can", "could", "would",
-})
-
-
-def is_conversational_question(text: Optional[str]) -> bool:
-    """Returns True if teacher text contains interrogative cues or question mark."""
-    if not text:
-        return False
-    clean_t = text.strip().lower()
-    if "?" in clean_t:
-        return True
-    tokens = [w.strip("?,.!") for w in clean_t.split()]
-    return any(w in QUESTION_WORDS for w in tokens)
+TOPIC_LEXICON = [
+    (["fruit"], "Favorite fruit: apple, banana, orange, watermelon, strawberry, mango, coconut, grape, durian, peach, pear."),
+    (["food", "eat"], "Favorite food: pizza, sushi, chicken, hamburger, pasta, noodles, rice, soup, salad, bread, steak."),
+    (["drink"], "Favorite drink: orange juice, apple juice, water, milk, soda, tea, cola, lemonade, smoothie."),
+    (["color"], "Favorite color: red, blue, green, yellow, pink, purple, black, white, orange, brown, grey, turquoise."),
+    (["weather"], "Weather: sunny, rainy, windy, snowy, cloudy, stormy, hot, cold, warm, foggy."),
+    (["animal"], "Favorite animal: dog, cat, rabbit, lion, tiger, elephant, whale, dolphin, mantis, monkey, bird, bear."),
+    (["who are they", "family", "people in your family", "people in your house"], "Family members: mother, father, mom, dad, brother, sister, grandma, grandpa, aunt, uncle, me."),
+    (["how many people"], "Number of people: one, two, three, four, five, six, seven, eight, nine, ten people."),
+    (["old"], "Age: five, six, seven, eight, nine, ten, eleven, twelve years old."),
+    (["what's your name", "what is your name"], "Introduction: My name is... Common names: Khoa, Vinh, Duc, Du, Truc Anh, Sophia, Nam, Minh, Linh."),
+    (["spell"], "Spelling letters: A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U, V, W, X, Y, Z."),
+    (["why"], "Reasons: because it is cute, clever, strong, big, small, fast, beautiful, dangerous, delicious, sweet, bigger than."),
+]
 
 
 def build_context_prompt_for_turn(teacher_text: Optional[str]) -> Optional[str]:
-    """Build natural conversational context prompt based on teacher's question."""
+    """Build natural conversational context prompt with ESL categorical topic priming."""
     if not teacher_text:
         return None
     t_clean = teacher_text.lower().strip()
-    if any(q in t_clean for q in ["goodbye", "bye"]):
-        return "Teacher: Goodbye. Student says: Goodbye. Bye."
-    return f"Question: {teacher_text.strip()}. Answer:"
 
+    lex_hint = ""
+    for keys, hint in TOPIC_LEXICON:
+        if any(k in t_clean for k in keys):
+            lex_hint = hint
+            break
 
-def clean_student_transcript(text: str) -> str:
-    """Clean stutters, repetitions, and immediate duplications in student transcript."""
-    s = text.strip()
-    if not s:
-        return ""
-        
-    # Collapse immediate repeated duplicate words (e.g. "I I" -> "I", "lion lion lion" -> "lion")
-    s = re.sub(r"\b([a-zA-Z0-9']+)(?:\s+\1\b)+", r"\1", s, flags=re.I)
-    
-    # Collapse immediate repeated 2-word phrases (e.g. "I like I like" -> "I like", "two sisters two sisters" -> "two sisters")
-    s = re.sub(r"(\b[a-zA-Z0-9']+\s+[a-zA-Z0-9']+\b)(?:\s+\1)+", r"\1", s, flags=re.I)
-    
-    return s.strip()
+    if "spell" in t_clean:
+        return lex_hint or "Spelling English letters A to Z."
 
-
-def normalize_spelling_text(text: str) -> str:
-    """Normalize spelling turn text to standard hyphenated format (e.g. 'D-U-C.')."""
-    clean = text.strip().upper()
-    # Strip conversational prefixes
-    clean = re.sub(r"^(HOW DO YOU SPELL YOUR NAME|HOW DO YOU SPELL|SPELL YOUR NAME|IT'S|IT IS)\s+", "", clean, flags=re.I).strip()
-    clean = clean.replace(".", "").replace("-", " ")
-    
-    tokens = clean.split()
-    # Check if all tokens are single letters
-    if all(len(t) == 1 for t in tokens) and len(tokens) >= 2:
-        # Deduplicate immediate duplicates e.g. A A -> A
-        dedup = []
-        for t in tokens:
-            if not dedup or t != dedup[-1]:
-                dedup.append(t)
-        return "-".join(dedup) + "."
-        
-    # If single contiguous word in a spelling turn, hyphenate letters
-    if len(tokens) == 1 and clean.isalpha() and 2 <= len(clean) <= 12:
-        return "-".join(list(clean)) + "."
-        
-    return text.strip()
-
-
-def format_sentence_casing(text: str) -> str:
-    """Format sentence with proper casing, capitalized 'I', and ending period."""
-    s = text.strip()
-    if not s:
-        return ""
-    if "-" in s and all(len(part) == 1 for part in s.replace(".", "").split("-")):
-        return s if s.endswith(".") else s + "."
-        
-    words = s.split()
-    formatted = []
-
-    for idx, w in enumerate(words):
-        lw = w.lower()
-        bare = re.sub(r"[^\w'-]", "", lw)
-        
-        if bare in ("i", "i'm", "i'd", "i'll", "i've"):
-            fixed = "I" + lw[1:]
-        elif idx == 0:
-            fixed = w[0].upper() + w[1:].lower() if len(w) > 1 else w.upper()
-        else:
-            fixed = lw
-        formatted.append(fixed)
-        
-    res = " ".join(formatted)
-
-    if not res.endswith((".", "!", "?")):
-        res += "."
-    return res
-
-
-def _has_finite_verb(transcript: str) -> bool:
-    """Returns True if utterance contains a finite verb or contraction."""
-    clean_text = transcript.strip()
-    words = [w.lower().strip() for w in re.sub(r"[^\w\s']", " ", clean_text).split() if w.strip()]
-    if not words:
-        return False
-    common_verbs = {
-        "is", "are", "was", "were", "am", "have", "has", "had", "do", "does", "did",
-        "can", "could", "will", "would", "like", "likes", "liked", "live", "lives", "lived",
-        "eat", "eats", "ate", "play", "plays", "played", "see", "sees", "saw", "prefer"
-    }
-    if any(w in common_verbs for w in words):
-        return True
-    if any("'" in w for w in clean_text.split()):
-        return True
-    return False
+    if lex_hint:
+        return f"The teacher asks: {teacher_text.strip()}. {lex_hint} The student answers."
+    return f"The teacher asks: {teacher_text.strip()}. The student answers."
 
 
 def _has_intervening_other_speaker_turn(
@@ -221,27 +83,19 @@ def _has_intervening_other_speaker_turn(
     diarize_segments: list,
     teacher_turns: Optional[list] = None,
     target_speaker: str = "Student",
-    max_cue_duration: float = 1.2,
+    max_cue_duration: float = 0.3,
 ) -> bool:
-    # 1. If any teacher turn between start_sec and end_sec was a conversational question, it's a strict turn boundary
+    """Check if the other speaker (Teacher) spoke an intervening prompt between two student segments."""
     if teacher_turns:
         for t in teacher_turns:
             t_s = float(t.get("start_sec", 0))
             t_e = float(t.get("end_sec", 0))
-            if t_e > start_sec + 0.1 and t_s < end_sec - 0.1:
-                t_tr = (t.get("transcript") or "").strip()
-                t_words = t_tr.split()
-                # If teacher asked a question, it's always a strict turn boundary
-                if is_conversational_question(t_tr):
-                    return True
-                # A teacher cue/scaffolding (e.g. "in", "good", "okay") is <= 2 words and not a question
-                if len(t_words) <= 2:
-                    continue
-                if (t_e - t_s) > max_cue_duration:
-                    return True
+            overlap_s = max(start_sec, t_s)
+            overlap_e = min(end_sec, t_e)
+            if overlap_e - overlap_s > max_cue_duration:
+                return True
         return False
 
-    # 2. Check diarize segments for other-speaker speech
     accepted_labels = {"student", "speaker b"} if target_speaker.lower() == "student" else {"teacher", "speaker a"}
     for seg in diarize_segments:
         spk = getattr(seg, "speaker", None) if not isinstance(seg, dict) else seg.get("speaker")
@@ -250,10 +104,10 @@ def _has_intervening_other_speaker_turn(
         if str(spk).lower() not in accepted_labels:
             s = float(getattr(seg, "start", 0) if not isinstance(seg, dict) else seg.get("start", 0))
             e = float(getattr(seg, "end", 0) if not isinstance(seg, dict) else seg.get("end", 0))
-            if e > start_sec + 0.1 and s < end_sec - 0.1:
-                dur = e - s
-                if dur > max_cue_duration:
-                    return True
+            overlap_s = max(start_sec, s)
+            overlap_e = min(end_sec, e)
+            if overlap_e - overlap_s > max_cue_duration:
+                return True
     return False
 
 
@@ -390,15 +244,7 @@ class DiarizeAndTranscribePipeline:
             # - For farewell/goodbye: condition directly so "bye" decodes "bye" instead of "but"
             # - For questions > 1.8s: condition on conversational QA question
             # - Short exclamations/backchannels <= 1.8s decode raw without prompt
-            context_prompt = None
-            if teacher_prompt:
-                if any(q in t_clean for q in ["goodbye", "bye"]):
-                    context_prompt = "Teacher: Goodbye. Student says: Goodbye. Bye."
-                elif "spell" in t_clean:
-                    # Letter-by-letter spelling turns decode best acoustically without QA bias
-                    context_prompt = None
-                elif s_dur > 1.8:
-                    context_prompt = build_context_prompt_for_turn(teacher_prompt)
+            context_prompt = build_context_prompt_for_turn(teacher_prompt) if teacher_prompt else None
 
             try:
                 meta = transcribe_audio_with_meta(
@@ -438,8 +284,8 @@ class DiarizeAndTranscribePipeline:
                 "language": "vi" if is_vi else detected_lang,
             })
 
-        # ── 3. Conversational Turn Merging (Clausal Continuity & Floor Scaffolding) ──
-        print("[Stage 1] Applying clausal continuity & floor-holding turn merging...", flush=True)
+        # ── 3. Conversational Turn Merging (Pure Acoustic Continuity) ──
+        print("[Stage 1] Applying conversational turn merging...", flush=True)
         accepted_labels = {"student", "speaker b"}
         merged_turns: List[Dict[str, Any]] = []
         i = 0
@@ -449,24 +295,17 @@ class DiarizeAndTranscribePipeline:
                 nxt = student_candidates[i + 1]
                 gap = nxt["start_sec"] - curr["end_sec"]
 
-                is_curr_incomplete = _is_incomplete_turn(curr["transcript"])
-                is_nxt_dependent = _is_dependent_fragment(nxt["transcript"])
-                nxt_has_verb = _has_finite_verb(nxt["transcript"])
-                is_curr_false_start = _is_false_start(curr["transcript"], curr["duration_sec"])
-
                 other_spoke_full_turn = _has_intervening_other_speaker_turn(
                     curr["end_sec"],
                     nxt["start_sec"],
                     all_segs,
                     teacher_turns=teacher_turns,
                     target_speaker="Student",
-                    max_cue_duration=1.2,
+                    max_cue_duration=0.3,
                 )
 
-                should_merge = False
-                if 0 <= gap <= 3.5 and not other_spoke_full_turn:
-                    if is_curr_incomplete or is_nxt_dependent or is_curr_false_start:
-                        should_merge = True
+                # Pure acoustic merge: merge consecutive student utterances within short pause (<= 2.5s) without intervening teacher prompt
+                should_merge = (0 <= gap <= 2.5) and not other_spoke_full_turn
 
                 if should_merge:
                     try:
@@ -475,18 +314,22 @@ class DiarizeAndTranscribePipeline:
                         merged_name = f"student_turn_merged_{curr['index']:03d}_{nxt['index']:03d}.wav"
                         comb_path = student_clips_dir / merged_name
 
+                        # Audio Stitching: concatenate clean audio of curr and nxt with 150ms clean silence,
+                        # completely eliminating any intervening teacher speech, noise, or bleed in the gap.
                         p_cfg = PreprocessConfig.from_dict(self.config.get("audio_preprocess"))
                         p_cfg.denoise = False
-                        wav = load_waveform(audio_path, p_cfg)
                         sr = p_cfg.sample_rate
-                        mono = wav if wav.dim() == 1 else wav.mean(0)
-                        s_samp = max(0, int(s_time * sr))
-                        e_samp = min(mono.shape[0], int(e_time * sr))
-                        clip = mono[s_samp:e_samp].contiguous().unsqueeze(0)
 
-                        # Intervening speech muting removed: preserves natural speech continuity
-                        # and prevents destroying cross-talk / trailing phrases like '...and me'.
-                        save_audio_file(comb_path, clip, sr)
+                        c_wav = load_waveform(curr["audio_path"], p_cfg)
+                        n_wav = load_waveform(nxt["audio_path"], p_cfg)
+                        if c_wav.dim() == 1:
+                            c_wav = c_wav.unsqueeze(0)
+                        if n_wav.dim() == 1:
+                            n_wav = n_wav.unsqueeze(0)
+
+                        silence = torch.zeros((1, int(0.15 * sr)), dtype=c_wav.dtype)
+                        stitched = torch.cat([c_wav, silence, n_wav], dim=1)
+                        save_audio_file(comb_path, stitched, sr)
 
                         # Re-transcribe merged audio with contextual teacher prompt
                         prec_m = [t for t in teacher_turns if t["start_sec"] < s_time and t["end_sec"] <= s_time + 1.5]
@@ -503,7 +346,7 @@ class DiarizeAndTranscribePipeline:
                             "index": curr["index"],
                             "start_sec": s_time,
                             "end_sec": e_time,
-                            "duration_sec": round((e_samp - s_samp) / sr, 3),
+                            "duration_sec": round(stitched.shape[1] / sr, 3),
                             "audio_path": str(comb_path),
                             "transcript": m_raw if m_is_vi else m_clean,
                             "clean_transcript": m_clean,
@@ -523,42 +366,12 @@ class DiarizeAndTranscribePipeline:
             merged_turns.append(curr)
             i += 1
 
-        # ── 4. Link Preceding Teacher Prompt for Dialogue Alignment & Polish Transcripts ──
+        # ── 4. Link Preceding Teacher Prompt for Dialogue Alignment ──
         candidate_student_turns: List[Dict[str, Any]] = []
         for idx, s_turn in enumerate(merged_turns, start=1):
             s_start = s_turn["start_sec"]
-            s_dur = s_turn["duration_sec"]
-            # Find closest preceding teacher prompt
-            preceding_t = [t for t in teacher_turns if t["start_sec"] < s_start and t["end_sec"] <= s_start + 1.2]
+            preceding_t = [t for t in teacher_turns if t["start_sec"] < s_start and t["end_sec"] <= s_start + 1.5]
             teacher_prompt = preceding_t[-1]["transcript"] if preceding_t else None
-            t_prompt_lower = (teacher_prompt or "").lower()
-
-            raw_text = s_turn["transcript"]
-            cleaned = clean_student_transcript(raw_text)
-
-            # Check if spelling turn
-            is_spelling = "spell" in t_prompt_lower or (
-                len(cleaned.split()) >= 2 and all(len(w) == 1 for w in cleaned.split())
-            )
-            if is_spelling:
-                polished_text = normalize_spelling_text(cleaned)
-                if not ("-" in polished_text and any(c.isalpha() for c in polished_text)):
-                    polished_text = format_sentence_casing(cleaned)
-            else:
-                polished_text = format_sentence_casing(cleaned)
-
-            # Check if backchannel / exclamation
-            clean_word_tokens = [w.lower() for w in re.sub(r"[^\w\s]", "", cleaned).split()]
-            is_bc = (
-                cleaned.lower() in DEFAULT_BACKCHANNELS
-                or " ".join(clean_word_tokens) in DEFAULT_BACKCHANNELS
-                or (s_dur < 1.0 and len(clean_word_tokens) <= 1 and clean_word_tokens and clean_word_tokens[0] in DEFAULT_BACKCHANNELS)
-            )
-
-            # If teacher prompt is farewell greeting ("goodbye", "bye") and student response is a short farewell token
-            if any(q in t_prompt_lower for q in ["goodbye", "bye"]):
-                if len(clean_word_tokens) <= 2 and any(w in clean_word_tokens for w in ["bye", "by", "goodbye", "but"]):
-                    polished_text = "Goodbye."
 
             candidate_student_turns.append({
                 "turn_id": idx,
@@ -567,56 +380,16 @@ class DiarizeAndTranscribePipeline:
                 "end_sec": s_turn["end_sec"],
                 "duration_sec": s_turn["duration_sec"],
                 "audio_path": s_turn["audio_path"],
-                "transcript": polished_text,
-                "raw_transcript": raw_text,
+                "transcript": s_turn["transcript"],
+                "raw_transcript": s_turn["transcript"],
                 "is_vietnamese": s_turn.get("is_vietnamese", False),
                 "language": s_turn.get("language", "en"),
                 "teacher_prompt": teacher_prompt,
-                "is_backchannel": is_bc,
             })
 
-        # Prune isolated non-answer filler / false-start turns (e.g. child gasping 'Oh my god' before answering)
-        final_student_turns: List[Dict[str, Any]] = []
-        for s_turn in candidate_student_turns:
-            clean_word_tokens = [w.lower() for w in re.sub(r"[^\w\s]", "", s_turn["transcript"]).split()]
-            is_pure_filler = (
-                s_turn["transcript"].lower().rstrip(".?!") in {"oh my god", "my god", "oh god", "gosh", "oops", "jeez", "oh dear", "uh", "um", "ah", "hmm", "mmm", "mm"}
-                or (" ".join(clean_word_tokens) in {"oh my god", "my god", "oh god", "gosh", "oops", "jeez", "oh dear", "uh", "um", "ah", "hmm", "mmm", "mm"})
-            )
-            if is_pure_filler and s_turn["duration_sec"] < 2.5:
-                print(f"  [Prune Backchannel] Skipping isolated exclamation turn: '{s_turn['transcript']}' ({s_turn['duration_sec']:.2f}s)")
-                continue
-            s_turn["turn_id"] = len(final_student_turns) + 1
-            final_student_turns.append(s_turn)
-
-        # ── 5. Dialogue-Level Spelling & Coreference Resolution ──
-        spelled_name = None
-        spelling_turn_idx = None
-        for i, t in enumerate(final_student_turns):
-            t_prompt = (t.get("teacher_prompt") or "").lower()
-            tr = t.get("transcript", "")
-            is_spelling_format = ("-" in tr and any(c.isalpha() for c in tr)) or ("spell" in t_prompt or "call" in t_prompt)
-            if is_spelling_format and not t.get("is_backchannel", False):
-                norm_spell = normalize_spelling_text(tr)
-                letters = [c.upper() for c in norm_spell if c.isalpha()]
-                if 2 <= len(letters) <= 12:
-                    t["transcript"] = "-".join(letters) + "."
-                    spelled_name = "".join(letters).capitalize()
-                    spelling_turn_idx = i
-                    break
-
-        if spelled_name and spelling_turn_idx is not None:
-            for i in range(spelling_turn_idx):
-                intro = final_student_turns[i]["transcript"]
-                m = re.search(r"\b(my\s+name\s+is|i\s+am|i'm)\b", intro, re.I)
-                if m:
-                    intro_name_part = intro[m.end():].strip().rstrip(".")
-                    has_vn_diacritics = any(c in "àáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđĐ" for c in intro_name_part)
-                    # If intro did not have Vietnamese diacritics or had unclear acoustic recognition, align with spelled name
-                    if not has_vn_diacritics:
-                        prefix = intro[:m.end()].strip()
-                        final_student_turns[i]["transcript"] = f"{prefix} {spelled_name}."
-                    break
+        # ── 5. ASR Error Correction Pipeline (Pure LLM - deepseek-v4.1-flash in 1 prompt) ──
+        corrector = AsrErrorCorrector(enable_llm=True)
+        final_student_turns = corrector.correct_turns(candidate_student_turns)
 
         manifest = {
             "source_audio": str(audio_path),
