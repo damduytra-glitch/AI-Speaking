@@ -354,37 +354,6 @@ _gpu_active_task: Optional[str] = None
 _gpu_queue_count = 0
 
 
-def _bootstrap_llm_env_from_supabase() -> None:
-    """Populate GEMINI_API_KEY / endpoint / model from Supabase global_settings when missing in env."""
-    if get_gemini_api_key():
-        return
-    svc_url, service_key = get_supabase_service_config()
-    if not svc_url or not service_key:
-        return
-    try:
-        resp = requests.get(
-            f"{svc_url}/rest/v1/global_settings",
-            params={"id": "eq.1", "select": "gemini_api_key,gemini_api_url,gemini_model", "limit": "1"},
-            headers={"apikey": service_key, "Authorization": f"Bearer {service_key}"},
-            timeout=10,
-        )
-        if resp.status_code != 200:
-            return
-        rows = resp.json()
-        row = rows[0] if isinstance(rows, list) and rows else None
-        if not isinstance(row, dict):
-            return
-        key = str(row.get("gemini_api_key") or "").strip()
-        if key:
-            os.environ["GEMINI_API_KEY"] = key
-            print("✅ Đã đồng bộ GEMINI_API_KEY từ Supabase global_settings cho ASR Correction & NLP Scorer.")
-    except Exception:
-        pass
-
-
-_bootstrap_llm_env_from_supabase()
-
-
 def _resolve_classroom_analyzer():
     """Build or reuse diarization-free ClassroomLanguageAnalyzer sharing Whisper Large-v3-Turbo."""
     custom = _get_global("classroom_analyzer")
