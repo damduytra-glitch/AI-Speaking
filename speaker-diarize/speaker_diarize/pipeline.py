@@ -213,36 +213,37 @@ class TwoSpeakerSplitter:
         print(f"[Diarize] Pass 1 Clustering: {len(windows)} windows embedded in {t1 - t0:.2f}s (batch)")
 
         teacher_cluster: int | None = None
-        if teacher_emb is not None and student_emb is not None:
-            # Dual reference mode: directly use reference embeddings as centroids
-            teacher_cluster = 0
-            centers = [teacher_emb, student_emb]
-            print("\n[Diarization: Dual Reference Mode]")
-            print(f"- Giáo viên (Teacher) reference embedding loaded (norm={np.linalg.norm(teacher_emb):.2f})")
-            print(f"- Học sinh (Student)  reference embedding loaded (norm={np.linalg.norm(student_emb):.2f})")
-        else:
-            labels = batch_cluster_two(embeddings)
-            centers = self._cluster_centers(embeddings, labels)
-            n_clusters = len(set(labels))
+        labels = batch_cluster_two(embeddings)
+        centers = self._cluster_centers(embeddings, labels)
+        n_clusters = len(set(labels))
 
-            if n_clusters == 1:
-                teacher_cluster = 0 if (teacher_emb is not None or student_emb is not None) else None
+        if n_clusters == 1:
+            if teacher_emb is not None and student_emb is not None:
+                sim_t0 = float(np.dot(centers[0], teacher_emb))
+                sim_s0 = float(np.dot(centers[0], student_emb))
+                teacher_cluster = 0 if sim_t0 >= sim_s0 else 1
+                print(f"\n[Mapping Similarity - Single Cluster]")
+                print(f"- Cluster 0 vs Teacher: {sim_t0:.3f}, vs Student: {sim_s0:.3f} => {'Teacher' if teacher_cluster == 0 else 'Student'}")
             elif teacher_emb is not None or student_emb is not None:
-                sim_t0 = float(np.dot(centers[0], teacher_emb)) if teacher_emb is not None else 0.0
-                sim_t1 = float(np.dot(centers[1], teacher_emb)) if teacher_emb is not None else 0.0
-                sim_s0 = float(np.dot(centers[0], student_emb)) if student_emb is not None else 0.0
-                sim_s1 = float(np.dot(centers[1], student_emb)) if student_emb is not None else 0.0
-
-                score_a = sim_t0 + sim_s1
-                score_b = sim_t1 + sim_s0
-
-                teacher_cluster = 0 if score_a >= score_b else 1
-                print(f"\n[Mapping Similarity]")
-                print(f"- Giao vien (Teacher) so voi Cluster 0: {sim_t0:.3f}, Cluster 1: {sim_t1:.3f}")
-                print(f"- Hoc sinh (Student)  so voi Cluster 0: {sim_s0:.3f}, Cluster 1: {sim_s1:.3f}")
-                print(f"=> Quyet dinh: Gan Giao vien = Cluster {teacher_cluster}, Hoc sinh = Cluster {1 - teacher_cluster}")
+                teacher_cluster = 0 if teacher_emb is not None else 1
             else:
                 teacher_cluster = None
+        elif teacher_emb is not None or student_emb is not None:
+            sim_t0 = float(np.dot(centers[0], teacher_emb)) if teacher_emb is not None else 0.0
+            sim_t1 = float(np.dot(centers[1], teacher_emb)) if teacher_emb is not None else 0.0
+            sim_s0 = float(np.dot(centers[0], student_emb)) if student_emb is not None else 0.0
+            sim_s1 = float(np.dot(centers[1], student_emb)) if student_emb is not None else 0.0
+
+            score_a = sim_t0 + sim_s1
+            score_b = sim_t1 + sim_s0
+
+            teacher_cluster = 0 if score_a >= score_b else 1
+            print(f"\n[Mapping Similarity (In-Domain Clusters + Reference Mapping)]")
+            print(f"- Giao vien (Teacher) so voi Cluster 0: {sim_t0:.3f}, Cluster 1: {sim_t1:.3f}")
+            print(f"- Hoc sinh (Student)  so voi Cluster 0: {sim_s0:.3f}, Cluster 1: {sim_s1:.3f}")
+            print(f"=> Quyet dinh: Gan Giao vien = Cluster {teacher_cluster}, Hoc sinh = Cluster {1 - teacher_cluster}")
+        else:
+            teacher_cluster = None
 
         # ════════════════════════════════════════════════════════════════════
         # Pass 2: Boundary Refinement — Batch GPU Inference
@@ -328,83 +329,25 @@ class TwoSpeakerSplitter:
                 merged_segments.append(seg)
 
         # ════════════════════════════════════════════════════════════════════
-        # Pass 3: 2nd-pass Refinement — Batch GPU Inference per segment
+        # Pass 3: Role Assignment from In-Domain Clustered Segments
+        # (Uses in-domain session centroids from Pass 1+2 to avoid out-of-domain
+        # channel/mic bias and short-utterance drops on child voices)
         # ════════════════════════════════════════════════════════════════════
         t4 = time.time()
         final_segments = []
+        for s in merged_segments:
+            if teacher_cluster is not None:
+                role = ROLE_TEACHER if s["cluster"] == teacher_cluster else ROLE_STUDENT
+            else:
+                role = LABELS[s["cluster"]]
 
-        if teacher_emb is not None and student_emb is not None:
-            # Gom tất cả segment chunks cần refinement → batch embed
-            seg_chunks = []
-            seg_chunk_window_map = []  # (seg_index, list_of_window_indices)
-
-            for i, s in enumerate(merged_segments):
-                chunk = audio[int(s["start"]*sample_rate) : int(s["end"]*sample_rate)]
-                chunk_windows = [w for w in self.buffer.iter_windows(chunk) if self.vad.is_speech(w.audio)]
-                
-                if chunk_windows:
-                    start_idx = len(seg_chunks)
-                    for w in chunk_windows:
-                        seg_chunks.append(w.audio)
-                    seg_chunk_window_map.append((i, list(range(start_idx, len(seg_chunks)))))
-                else:
-                    # Không có speech windows → embed toàn bộ chunk
-                    start_idx = len(seg_chunks)
-                    seg_chunks.append(chunk)
-                    seg_chunk_window_map.append((i, [start_idx]))
-
-            # Batch inference cho tất cả chunks 1 lần
-            all_chunk_embs = self.embedder.embed_batch(seg_chunks) if seg_chunks else []
-
-            for seg_idx, window_indices in seg_chunk_window_map:
-                s = merged_segments[seg_idx]
-                t_score = None
-                s_score = None
-
-                try:
-                    chunk_embs = [all_chunk_embs[j] for j in window_indices if j < len(all_chunk_embs) and all_chunk_embs[j] is not None]
-                    
-                    if chunk_embs:
-                        seg_emb = np.mean(chunk_embs, axis=0)
-                    else:
-                        chunk = audio[int(s["start"]*sample_rate) : int(s["end"]*sample_rate)]
-                        seg_emb = self.embedder.embed_direct(chunk)
-                        
-                    norm = np.linalg.norm(seg_emb)
-                    if norm > 0: seg_emb /= norm
-                    
-                    t_score = float(np.dot(seg_emb, teacher_emb))
-                    s_score = float(np.dot(seg_emb, student_emb))
-                    
-                    # Quyết định role dựa trên so sánh độ tương đồng giọng thực tế
-                    role = ROLE_TEACHER if t_score >= s_score else ROLE_STUDENT
-                    
-                    # Lọc bỏ đoạn nhiễu/tạp âm không khớp với cả 2 người nói (< 0.40)
-                    if max(t_score, s_score) < self.min_similarity_threshold:
-                        continue
-                        
-                except (ValueError, IndexError):
-                    role = ROLE_TEACHER if s["cluster"] == teacher_cluster else ROLE_STUDENT
-
-                final_segments.append(DiarizationSegment(
-                    start=s["start"], end=s["end"], speaker=role, confidence=1.0,
-                    teacher_score=t_score, student_score=s_score
-                ))
-        else:
-            # Không có dual reference → gán nhãn theo cluster trực tiếp (không cần embed thêm)
-            for s in merged_segments:
-                if teacher_cluster is not None:
-                    role = ROLE_TEACHER if s["cluster"] == teacher_cluster else ROLE_STUDENT
-                else:
-                    role = LABELS[s["cluster"]]
-                    
-                final_segments.append(DiarizationSegment(
-                    start=s["start"], end=s["end"], speaker=role, confidence=1.0,
-                    teacher_score=None, student_score=None
-                ))
+            final_segments.append(DiarizationSegment(
+                start=s["start"], end=s["end"], speaker=role, confidence=1.0,
+                teacher_score=None, student_score=None
+            ))
 
         t5 = time.time()
-        print(f"[Diarize] Pass 3 Refinement: {len(merged_segments)} segments refined in {t5 - t4:.2f}s (batch)")
+        print(f"[Diarize] Pass 3 Role Assignment: {len(merged_segments)} segments finalized in {t5 - t4:.2f}s")
 
         # Hậu xử lý: Gộp các lượt nói liền kề của cùng 1 người nếu người kia không nói xen vào
         merged_roles = []

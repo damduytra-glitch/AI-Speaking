@@ -346,8 +346,8 @@ export function calculateBandScore(score10: number, examType = 'general') {
   }
 
   if (examType === 'toeic') {
-    let toeicScore = Math.round((s / 10) * 200);
-    toeicScore = Math.round(toeicScore / 10) * 10;
+    let toeicScore = Math.round((s / 9) * 200);
+    toeicScore = Math.min(200, Math.round(toeicScore / 10) * 10);
     let level = 3;
     let desc = 'Level 1-3 (0-70) - Cần cải thiện';
 
@@ -383,9 +383,9 @@ export function calculateBandScore(score10: number, examType = 'general') {
   else if (s >= 5.0) rank = 'Khá';
 
   return {
-    band: `${s.toFixed(1)} / 10`,
+    band: `Band ${s.toFixed(1)} / 9.0`,
     badgeClass: s >= 7.0 ? 'badge-general-high' : s >= 5.0 ? 'badge-general-mid' : 'badge-general-low',
-    title: 'Đánh giá chung',
+    title: 'IELTS Speaking Band',
     description: rank,
     rawBand: s,
   };

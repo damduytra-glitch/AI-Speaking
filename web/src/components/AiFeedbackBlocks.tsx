@@ -104,31 +104,31 @@ export function ComprehensiveAiFeedback({ aiEval, otf, scores }: ComprehensiveAi
 
       <div>
         <div className="mb-2 text-xs font-bold uppercase tracking-wider text-slate-500">
-          Chi tiết 4 tiêu chí đánh giá
+          Chi tiết 4 tiêu chí IELTS Speaking (Band 1.0 – 9.0)
         </div>
         <div className="grid grid-cols-2 gap-2.5 md:grid-cols-4">
           <div className="rounded-2xl border border-emerald-100 bg-emerald-50/60 p-3 text-center">
             <div className="text-xl font-extrabold text-emerald-600 tabular-nums">{prScore}</div>
-            <div className="mt-1 text-xs font-bold text-slate-900">Phát Âm &amp; Ngữ Điệu</div>
-            <div className="text-[11px] text-slate-500">Độ chuẩn âm &amp; trôi chảy</div>
+            <div className="mt-1 text-xs font-bold text-slate-900">Pronunciation (P)</div>
+            <div className="text-[11px] text-slate-500">Phát âm &amp; Ngữ điệu</div>
           </div>
 
           <div className="rounded-2xl border border-sky-100 bg-sky-50/60 p-3 text-center">
             <div className="text-xl font-extrabold text-sky-600 tabular-nums">{fcScore}</div>
-            <div className="mt-1 text-xs font-bold text-slate-900">Mạch Lạc &amp; Tương Tác</div>
-            <div className="text-[11px] text-slate-500">Phản xạ &amp; Mở rộng ý</div>
+            <div className="mt-1 text-xs font-bold text-slate-900">Fluency &amp; Coherence (FC)</div>
+            <div className="text-[11px] text-slate-500">Độ trôi chảy &amp; Mạch lạc</div>
           </div>
 
           <div className="rounded-2xl border border-amber-100 bg-amber-50/60 p-3 text-center">
             <div className="text-xl font-extrabold text-amber-600 tabular-nums">{lrScore}</div>
-            <div className="mt-1 text-xs font-bold text-slate-900">Vốn Từ Vựng</div>
-            <div className="text-[11px] text-slate-500">Đa dạng &amp; Tự nhiên</div>
+            <div className="mt-1 text-xs font-bold text-slate-900">Lexical Resource (LR)</div>
+            <div className="text-[11px] text-slate-500">Từ vựng &amp; Diễn đạt</div>
           </div>
 
           <div className="rounded-2xl border border-indigo-100 bg-indigo-50/60 p-3 text-center">
             <div className="text-xl font-extrabold text-indigo-600 tabular-nums">{graScore}</div>
-            <div className="mt-1 text-xs font-bold text-slate-900">Ngữ Pháp &amp; Cấu Trúc</div>
-            <div className="text-[11px] text-slate-500">Chính xác &amp; Đa dạng</div>
+            <div className="mt-1 text-xs font-bold text-slate-900">Grammatical Range (GRA)</div>
+            <div className="text-[11px] text-slate-500">Ngữ pháp &amp; Cấu trúc</div>
           </div>
         </div>
       </div>

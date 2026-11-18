@@ -287,7 +287,7 @@ export default function AuthLandingPage() {
               <div className="mb-1 text-[11px] font-bold uppercase tracking-wider text-slate-500">
                 Phát âm
               </div>
-              <ScoreRingGauge score={8.2} max={10} size={96} strokeWidth={10} />
+              <ScoreRingGauge score={8.0} max={9} size={96} strokeWidth={10} />
               <span className="mt-2 rounded-full bg-emerald-50 border border-emerald-200 px-2.5 py-0.5 text-[11px] font-semibold text-emerald-700">
                 Rất tự nhiên
               </span>

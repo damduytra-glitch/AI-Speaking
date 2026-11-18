@@ -171,9 +171,10 @@ export function PracticeDetailModal({
               <div className="md:col-span-4 flex flex-col items-center justify-center rounded-2xl border border-slate-100 bg-slate-50/75 p-5">
                 <ScoreRingGauge
                   score={Number(detail.score_total || 0)}
+                  max={9}
                   size={146}
                   strokeWidth={13}
-                  label="Tổng điểm / 10"
+                  label="IELTS Band / 9.0"
                 />
               </div>
 
@@ -182,19 +183,19 @@ export function PracticeDetailModal({
                   size={215}
                   skills={[
                     {
-                      label: 'Phát âm',
+                      label: 'Pronunciation (P)',
                       value: Number(detail.score_accuracy ?? detail.score_total ?? 0),
                     },
                     {
-                      label: 'Mạch lạc',
+                      label: 'Fluency (FC)',
                       value: detail.score_context != null ? Number(detail.score_context) : null,
                     },
                     {
-                      label: 'Từ vựng',
+                      label: 'Lexical (LR)',
                       value: detail.score_lexical != null ? Number(detail.score_lexical) : null,
                     },
                     {
-                      label: 'Ngữ pháp',
+                      label: 'Grammar (GRA)',
                       value: detail.score_grammar != null ? Number(detail.score_grammar) : null,
                     },
                   ]}
@@ -203,25 +204,25 @@ export function PracticeDetailModal({
 
               <div className="md:col-span-4 space-y-2">
                 <div className="flex items-center justify-between rounded-xl border border-slate-100 bg-slate-50/85 px-3.5 py-2.5 text-xs">
-                  <span className="font-semibold text-slate-600">Phát âm</span>
+                  <span className="font-semibold text-slate-600">Pronunciation (P) · Phát âm</span>
                   <span className="font-extrabold text-emerald-600 tabular-nums">
                     {Number(detail.score_accuracy ?? detail.score_total ?? 0).toFixed(1)}
                   </span>
                 </div>
                 <div className="flex items-center justify-between rounded-xl border border-slate-100 bg-slate-50/85 px-3.5 py-2.5 text-xs">
-                  <span className="font-semibold text-slate-600">Mạch lạc</span>
+                  <span className="font-semibold text-slate-600">Fluency &amp; Coherence (FC)</span>
                   <span className="font-extrabold text-sky-600 tabular-nums">
                     {formatScoreValue(detail.score_context)}
                   </span>
                 </div>
                 <div className="flex items-center justify-between rounded-xl border border-slate-100 bg-slate-50/85 px-3.5 py-2.5 text-xs">
-                  <span className="font-semibold text-slate-600">Từ vựng</span>
+                  <span className="font-semibold text-slate-600">Lexical Resource (LR)</span>
                   <span className="font-extrabold text-amber-600 tabular-nums">
                     {formatScoreValue(detail.score_lexical)}
                   </span>
                 </div>
                 <div className="flex items-center justify-between rounded-xl border border-slate-100 bg-slate-50/85 px-3.5 py-2.5 text-xs">
-                  <span className="font-semibold text-slate-600">Ngữ pháp</span>
+                  <span className="font-semibold text-slate-600">Grammatical Range (GRA)</span>
                   <span className="font-extrabold text-indigo-600 tabular-nums">
                     {formatScoreValue(detail.score_grammar)}
                   </span>

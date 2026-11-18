@@ -354,6 +354,37 @@ _gpu_active_task: Optional[str] = None
 _gpu_queue_count = 0
 
 
+def _bootstrap_llm_env_from_supabase() -> None:
+    """Populate GEMINI_API_KEY / endpoint / model from Supabase global_settings when missing in env."""
+    if get_gemini_api_key():
+        return
+    svc_url, service_key = get_supabase_service_config()
+    if not svc_url or not service_key:
+        return
+    try:
+        resp = requests.get(
+            f"{svc_url}/rest/v1/global_settings",
+            params={"id": "eq.1", "select": "gemini_api_key,gemini_api_url,gemini_model", "limit": "1"},
+            headers={"apikey": service_key, "Authorization": f"Bearer {service_key}"},
+            timeout=10,
+        )
+        if resp.status_code != 200:
+            return
+        rows = resp.json()
+        row = rows[0] if isinstance(rows, list) and rows else None
+        if not isinstance(row, dict):
+            return
+        key = str(row.get("gemini_api_key") or "").strip()
+        if key:
+            os.environ["GEMINI_API_KEY"] = key
+            print("✅ Đã đồng bộ GEMINI_API_KEY từ Supabase global_settings cho ASR Correction & NLP Scorer.")
+    except Exception:
+        pass
+
+
+_bootstrap_llm_env_from_supabase()
+
+
 def _resolve_classroom_analyzer():
     """Build or reuse diarization-free ClassroomLanguageAnalyzer sharing Whisper Large-v3-Turbo."""
     custom = _get_global("classroom_analyzer")
@@ -365,12 +396,24 @@ def _resolve_classroom_analyzer():
 
     pipe = _get_global("pipeline")
     transcriber = transcribe_mod._transcriber
-    if transcriber is None:
+    if transcriber is None or not isinstance(transcriber, transcribe_mod.WhisperTranscriber):
         base_asr = dict(getattr(pipe, "_asr_cfg", None) or {})
-        base_asr.setdefault("model_name", "openai/whisper-large-v3-turbo")
+        base_asr["engine"] = "whisper"
+        base_asr["model_name"] = (
+            base_asr.get("model_name")
+            if base_asr.get("model_name") and "whisper" in str(base_asr.get("model_name")).lower()
+            else "openai/whisper-large-v3-turbo"
+        )
         base_asr["language"] = "auto"
         base_asr["allowed_languages"] = ["en", "vi"]
-        transcriber = transcribe_mod.get_transcriber(asr_config=base_asr)
+        transcriber = transcribe_mod.WhisperTranscriber(
+            model_name=base_asr["model_name"],
+            language="auto",
+            device=base_asr.get("device"),
+            torch_dtype=base_asr.get("torch_dtype", "float16"),
+            asr_config=base_asr,
+            allowed_languages=["en", "vi"],
+        )
 
     return ClassroomLanguageAnalyzer(transcriber=transcriber)
 
@@ -455,11 +498,26 @@ def extract_embedding_api(
 
         from speaker_diarize.audio_io import load_audio
         from speaker_diarize.denoise import denoise_with_deepfilternet, level_audio_to_target
+        from speaker_diarize.segmentation import RmsVad, SlidingWindowBuffer
 
         waveform, sr = load_audio(audio_path)
         waveform, sr = denoise_with_deepfilternet(waveform, sr)
         waveform = level_audio_to_target(waveform, sr)
-        emb = embedder.embed(waveform, sr)
+
+        vad = RmsVad(threshold_db=-42.0)
+        buf = SlidingWindowBuffer(window_sec=1.5, step_sec=0.5)
+        speech_windows = [w.audio for w in buf.iter_windows(waveform) if vad.is_speech(w.audio)]
+        if speech_windows and hasattr(embedder, "embed_batch"):
+            embs = embedder.embed_batch(speech_windows)
+            if embs and np is not None:
+                emb = np.mean(embs, axis=0).astype(np.float32)
+                norm = float(np.linalg.norm(emb))
+                if norm > 0:
+                    emb = emb / norm
+            else:
+                emb = embedder.embed(waveform, sr)
+        else:
+            emb = embedder.embed(waveform, sr)
 
         return JSONResponse({"success": True, "embedding": emb.tolist()})
     except Exception as e:

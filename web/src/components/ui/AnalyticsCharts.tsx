@@ -49,7 +49,7 @@ export function PageHeader({
 /* ── SCORE RING GAUGE (CIRCULAR DONUT) ──────────────────── */
 export function ScoreRingGauge({
   score,
-  max = 10,
+  max = 9,
   size = 160,
   strokeWidth = 14,
   label,
@@ -366,8 +366,8 @@ export function ScoreTrendChart({
     const pts = data.map((d, i) => {
       const x =
         data.length === 1 ? padL + plotW / 2 : padL + (i / (data.length - 1)) * plotW;
-      const clamped = Math.max(0, Math.min(10, d.score));
-      const y = padT + plotH - (clamped / 10) * plotH;
+      const clamped = Math.max(0, Math.min(9, d.score));
+      const y = padT + plotH - (clamped / 9) * plotH;
       return { x, y, ...d };
     });
 
@@ -420,8 +420,8 @@ export function ScoreTrendChart({
             </linearGradient>
           </defs>
 
-          {[2, 4, 6, 8, 10].map((tick) => {
-            const y = padT + plotH - (tick / 10) * plotH;
+          {[1, 3, 5, 7, 9].map((tick) => {
+            const y = padT + plotH - (tick / 9) * plotH;
             return (
               <g key={tick}>
                 <line
@@ -543,9 +543,11 @@ export interface SkillMetric {
 export function SkillRadarChart({
   skills,
   size = 240,
+  max = 9,
 }: {
   skills: [SkillMetric, SkillMetric, SkillMetric, SkillMetric];
   size?: number;
+  max?: number;
 }) {
   const cx = size / 2;
   const cy = size / 2;
@@ -560,10 +562,10 @@ export function SkillRadarChart({
   });
 
   const rings = [0.25, 0.5, 0.75, 1];
-  const values = skills.map((s) => (s.value != null && !Number.isNaN(s.value) ? Math.max(0, Math.min(10, s.value)) : 0));
+  const values = skills.map((s) => (s.value != null && !Number.isNaN(s.value) ? Math.max(0, Math.min(max, s.value)) : 0));
   const polygonPoints = values
     .map((v, i) => {
-      const pt = getPoint(angles[i], Math.max(0.08, v / 10));
+      const pt = getPoint(angles[i], Math.max(0.08, v / max));
       return `${pt.x},${pt.y}`;
     })
     .join(' ');
@@ -571,7 +573,7 @@ export function SkillRadarChart({
   const measuredCount = skills.filter((s) => s.value != null && !Number.isNaN(s.value)).length;
   const hasAny = skills.some((s) => s.value != null && s.value > 0);
 
-  const padX = 34;
+  const padX = 56;
   const padY = 18;
   return (
     <div className="flex flex-col items-center gap-3 w-full">
@@ -618,7 +620,7 @@ export function SkillRadarChart({
             ) : (
               values.map((v, i) => {
                 if (skills[i].value == null) return null;
-                const end = getPoint(angles[i], Math.max(0.08, v / 10));
+                const end = getPoint(angles[i], Math.max(0.08, v / max));
                 return (
                   <line
                     key={`seg-${i}`}
@@ -635,7 +637,7 @@ export function SkillRadarChart({
             )}
             {values.map((v, i) => {
               if (skills[i].value == null) return null;
-              const pt = getPoint(angles[i], Math.max(0.08, v / 10));
+              const pt = getPoint(angles[i], Math.max(0.08, v / max));
               return (
                 <circle
                   key={i}

@@ -804,187 +804,298 @@ class SpeakingPipeline:
                 "scored": score,
                 "sentences": [],
                 "sentence_count": 0,
-                "vietnamese_sentence_count": 0,
                 "transcript": "",
-                "transcript_lines": [],
                 "scores": {},
                 "message": f"{role}: không tách được lượt nói nào từ audio",
             }
 
-        sentences: List[Dict[str, Any]] = []
-        filtered_vi = 0
-        for seg in segments:
-            s_prompt = None
-            if teacher_sentences and str(role).lower() == "student":
-                s_start = seg.get("start_sec", 0.0)
-                prec = [t for t in teacher_sentences if t.get("start_sec", 0) < s_start and t.get("end_sec", 0) <= s_start + 1.5]
-                if prec:
-                    t_text = prec[-1].get("transcript", "")
-                    s_prompt = build_context_prompt_for_turn(t_text)
-
-            item, was_vi = self._process_segment(
-                seg, use_asr=use_asr, lang=lang, score=score, role=role, prompt=s_prompt,
-            )
-            if was_vi:
-                filtered_vi += 1
-            if item:
-                sentences.append(item)
-
-        # ── Principled Conversational Turn Merging (Dialogue Adjacency & Linguistic Continuity) ──
-        accepted_labels = {"student", "speaker b"} if str(role).lower() == "student" else {"teacher", "speaker a"}
-        merged_sentences: List[Dict[str, Any]] = []
-        i = 0
-        while i < len(sentences):
-            curr = sentences[i]
-            if i + 1 < len(sentences):
-                nxt = sentences[i + 1]
-                gap = nxt.get("start_sec", 0) - curr.get("end_sec", 0)
-
-                # 1. Linguistic continuity & clausal completeness:
-                # - Incomplete predicate: curr ends in connector/auxiliary verb (e.g. "MY FAVORITE DRINK IS")
-                is_curr_incomplete = _is_incomplete_turn(curr.get("transcript", ""))
-                # - Dependent fragment: nxt begins with preposition/conjunction without a main clause (e.g. "IN MY FAMILY")
-                is_nxt_dependent = _is_dependent_fragment(nxt.get("transcript", ""))
-                # - Clausal completeness: does nxt contain a finite verb?
-                nxt_has_verb = _has_finite_verb(nxt.get("transcript", ""))
-                # - False start / hesitation: curr is very short (<= 1.2s and <= 2 words)
-                is_curr_false_start = _is_false_start(curr.get("transcript", ""), curr.get("duration_sec", 0))
-
-                # Conversational floor: If nxt has a finite verb, interlocutor speech > 1.5s indicates
-                # an independent turn/question (e.g. teacher asked a new question).
-                # If nxt is a non-verb fragment completing an incomplete predicate or dependent phrase,
-                # interlocutor speech up to 2.5s is scaffolding cue/prompting (e.g. prompt like "IN MY FAMILY").
-                cue_threshold = 1.5 if nxt_has_verb else 2.5
-                other_spoke_full_turn = _has_intervening_other_speaker_turn(
-                    curr.get("end_sec", 0),
-                    nxt.get("start_sec", 0),
-                    diarize_segments,
-                    target_speaker=role,
-                    max_cue_duration=cue_threshold,
-                )
-
-                should_merge = False
-                if 0 <= gap <= 3.5 and not other_spoke_full_turn:
-                    if is_curr_incomplete or is_nxt_dependent:
-                        should_merge = True
-                    elif is_curr_false_start:
-                        # For false start, only merge if other speaker didn't speak at all in the gap
-                        other_spoke_at_all = any(
-                            float(getattr(s, "end", 0) if not isinstance(s, dict) else s.get("end", 0)) > curr.get("end_sec", 0) + 0.05
-                            and float(getattr(s, "start", 0) if not isinstance(s, dict) else s.get("start", 0)) < nxt.get("start_sec", 0) - 0.05
-                            for s in diarize_segments
-                            if str(getattr(s, "speaker", None) if not isinstance(s, dict) else s.get("speaker")).lower() not in accepted_labels
-                        )
-                        if not other_spoke_at_all:
-                            should_merge = True
-
-                if should_merge:
-                    try:
-                        s_time = curr["start_sec"]
-                        e_time = nxt["end_sec"]
-                        comb_path = output_dir / f"merged_turn_{curr['index']:03d}_{nxt['index']:03d}.wav"
-                        from data.audio_preprocess import load_waveform, save_audio_file, PreprocessConfig
-                        p_cfg = PreprocessConfig.from_dict(self.config.get("audio_preprocess"))
-                        p_cfg.denoise = False
-                        wav = load_waveform(source_audio, p_cfg)
-                        sr = p_cfg.sample_rate
-                        mono = wav if wav.dim() == 1 else wav.mean(0)
-                        s_samp = max(0, int(s_time * sr))
-                        e_samp = min(mono.shape[0], int(e_time * sr))
-                        clip = mono[s_samp:e_samp].contiguous().unsqueeze(0)
-
-                        # Mute any other-speaker bleed in the intervening gap
-                        for s in diarize_segments:
-                            spk = getattr(s, "speaker", None) if not isinstance(s, dict) else s.get("speaker")
-                            if spk is not None and str(spk).lower() not in accepted_labels:
-                                st = float(getattr(s, "start", 0) if not isinstance(s, dict) else s.get("start", 0))
-                                en = float(getattr(s, "end", 0) if not isinstance(s, dict) else s.get("end", 0))
-                                if en > s_time and st < e_time:
-                                    mute_s = max(0, int((st - s_time) * sr))
-                                    mute_e = min(clip.shape[-1], int((en - s_time) * sr))
-                                    if mute_e > mute_s:
-                                        clip[:, mute_s:mute_e] = 0.0
-
-                        save_audio_file(comb_path, clip, sr)
-
-                        comb_seg = {
-                            "index": curr["index"],
-                            "start_sec": s_time,
-                            "end_sec": e_time,
-                            "duration_sec": round((e_samp - s_samp) / sr, 3),
-                            "path": str(comb_path),
-                        }
-                        comb_item, _ = self._process_segment(
-                            comb_seg, use_asr=use_asr, lang=lang, score=score, role=role,
-                        )
-                        if comb_item:
-                            merged_sentences.append(comb_item)
-                            i += 2
-                            continue
-                    except Exception as me:
-                        print(f"[{role}] Turn merge notice: {me}", flush=True)
-
-            merged_sentences.append(curr)
-            i += 1
-        sentences = merged_sentences
-
-        if not sentences and use_asr:
-            print(f"[{role}] Không có lượt nói hợp lệ sau ASR ({len(segments)} turn, {filtered_vi} đoạn tiếng Việt)", flush=True)
+        if not use_asr:
             return {
                 "role": role,
                 "scored": score,
                 "sentences": [],
                 "sentence_count": 0,
-                "vietnamese_sentence_count": 0,
                 "transcript": "",
-                "transcript_lines": [],
                 "scores": {},
-                "filtered_vi_count": filtered_vi,
+                "message": f"{role}: ASR bị tắt",
+            }
+
+        # ── Step 1: ASR Transcription Only (matching diarize_and_transcribe.py) ──
+        candidates: List[Dict[str, Any]] = []
+        filtered_vi = 0
+        is_student = str(role).lower() == "student"
+
+        for seg in segments:
+            s_prompt = None
+            if teacher_sentences and is_student:
+                s_start = seg.get("start_sec", 0.0)
+                prec = [
+                    t for t in teacher_sentences
+                    if t.get("start_sec", 0) < s_start and t.get("end_sec", 0) <= s_start + 1.5
+                ]
+                if prec:
+                    s_prompt = build_context_prompt_for_turn(prec[-1].get("transcript", ""))
+
+            try:
+                meta = transcribe_audio_with_meta(seg["path"], asr_config=self._asr_cfg, prompt=s_prompt)
+                clean_tr = meta.get("text", "").strip()
+                raw_tr = meta.get("raw_text", "").strip()
+                detected_lang = meta.get("language", "en")
+                is_vi_from_asr = bool(meta.get("is_vietnamese", False))
+            except Exception:
+                continue
+
+            if not clean_tr and not raw_tr:
+                continue
+
+            display_tr = raw_tr if is_vi_from_asr else clean_tr
+            is_vi = is_vi_from_asr
+            if self._lang_id_cfg.get("enabled", False) and not is_vi:
+                is_vi, _ = is_vietnamese_segment(
+                    seg["path"],
+                    raw_tr or clean_tr,
+                    device=self.asr_device,
+                    cfg=self._lang_id_cfg,
+                    whisper_lang=detected_lang,
+                )
+            if is_vi:
+                filtered_vi += 1
+
+            candidates.append({
+                "index": seg["index"],
+                "start_sec": seg["start_sec"],
+                "end_sec": seg["end_sec"],
+                "duration_sec": seg.get("duration_sec", 0.0),
+                "audio": str(seg["path"]),
+                "transcript": display_tr,
+                "is_vietnamese": is_vi,
+                "language": "vi" if is_vi else detected_lang,
+            })
+
+        if not candidates:
+            print(f"[{role}] Không có lượt nói hợp lệ sau ASR ({len(segments)} turn)", flush=True)
+            return {
+                "role": role,
+                "scored": score,
+                "sentences": [],
+                "sentence_count": 0,
+                "transcript": "",
+                "scores": {},
                 "message": f"{role}: không có câu nói tiếng Anh hợp lệ sau nhận diện",
             }
 
-        # Attach preceding teacher prompt context to each student turn
-        if teacher_sentences and sentences:
-            for sent in sentences:
-                s_start = sent.get("start_sec", 0.0)
-                prec = [t for t in teacher_sentences if t.get("start_sec", 0) < s_start and t.get("end_sec", 0) <= s_start + 1.5]
-                if prec:
-                    sent["teacher_prompt"] = prec[-1].get("transcript", "")
+        # ── Step 2: Conversational Turn Merging (100% synced with diarize_and_transcribe.py) ──
+        if is_student and len(candidates) >= 2:
+            from data.audio_preprocess import load_waveform, save_audio_file, PreprocessConfig
 
-        # Apply ASR Error Correction if role is student
-        if str(role).lower() == "student" and sentences and self.config.get("asr_correction", {}).get("enabled", True):
+            question_cues = {"what", "who", "how", "why", "where", "when", "which", "spell", "tell"}
+
+            def _has_intervening_teacher(start_t: float, end_t: float, max_cue: float = 0.3) -> bool:
+                if teacher_sentences:
+                    for t in teacher_sentences:
+                        t_s = float(t.get("start_sec", 0.0))
+                        t_e = float(t.get("end_sec", 0.0))
+                        if min(end_t, t_e) - max(start_t, t_s) > max_cue:
+                            return True
+                    return False
+                return _has_intervening_other_speaker_turn(
+                    start_t, end_t, diarize_segments, target_speaker=role, max_cue_duration=max_cue
+                )
+
+            def _intervening_is_new_question(end_t: float, start_t: float) -> bool:
+                if not teacher_sentences:
+                    return False
+                between = [
+                    t for t in teacher_sentences
+                    if float(t.get("start_sec", 0.0)) >= end_t - 0.15
+                    and float(t.get("end_sec", 0.0)) <= start_t + 0.15
+                ]
+                for bt in between:
+                    btxt = (bt.get("transcript") or "").strip()
+                    bws = [w.lower() for w in re.sub(r"[^\w\s']", " ", btxt).split() if w.strip()]
+                    if "?" in btxt or any(w in question_cues for w in bws) or len(bws) >= 4:
+                        return True
+                return False
+
+            p_cfg = PreprocessConfig.from_dict(self.config.get("audio_preprocess"))
+            p_cfg.denoise = False
+            sr = p_cfg.sample_rate
+
+            merged_candidates: List[Dict[str, Any]] = []
+            i = 0
+            while i < len(candidates):
+                curr = candidates[i]
+                while i + 1 < len(candidates):
+                    nxt = candidates[i + 1]
+                    gap = float(nxt["start_sec"]) - float(curr["end_sec"])
+
+                    other_spoke_full_turn = _has_intervening_teacher(curr["end_sec"], nxt["start_sec"], max_cue=0.3)
+
+                    # Case A: Acoustic continuity (short pause <= 2.5s, no intervening teacher turn)
+                    acoustic_merge = (0 <= gap <= 2.5) and not other_spoke_full_turn
+
+                    # Case B: Syntactic incompleteness across a brief teacher scaffolding cue
+                    syntactic_merge = (
+                        (0 <= gap <= 3.0)
+                        and not _intervening_is_new_question(curr["end_sec"], nxt["start_sec"])
+                        and (_is_incomplete_turn(curr.get("transcript", "")) or _is_dependent_fragment(nxt.get("transcript", "")))
+                    )
+
+                    if not (acoustic_merge or syntactic_merge):
+                        break
+
+                    try:
+                        s_time = curr["start_sec"]
+                        e_time = nxt["end_sec"]
+                        comb_path = output_dir / f"student_turn_merged_{curr['index']:03d}_{nxt['index']:03d}.wav"
+
+                        c_wav = load_waveform(curr["audio"], p_cfg)
+                        n_wav = load_waveform(nxt["audio"], p_cfg)
+                        if c_wav.dim() == 1:
+                            c_wav = c_wav.unsqueeze(0)
+                        if n_wav.dim() == 1:
+                            n_wav = n_wav.unsqueeze(0)
+
+                        silence = torch.zeros((1, int(0.15 * sr)), dtype=c_wav.dtype)
+                        stitched = torch.cat([c_wav, silence, n_wav], dim=1)
+                        save_audio_file(comb_path, stitched, sr)
+
+                        merge_context = None
+                        if teacher_sentences:
+                            prec_m = [
+                                t for t in teacher_sentences
+                                if t.get("start_sec", 0) < s_time and t.get("end_sec", 0) <= s_time + 1.5
+                            ]
+                            if prec_m:
+                                merge_context = build_context_prompt_for_turn(prec_m[-1].get("transcript", ""))
+
+                        meta = transcribe_audio_with_meta(comb_path, asr_config=self._asr_cfg, prompt=merge_context)
+                        m_clean = meta.get("text", "").strip()
+                        m_raw = meta.get("raw_text", "").strip()
+                        m_lang = meta.get("language", "en")
+                        m_is_vi = bool(meta.get("is_vietnamese", False))
+
+                        curr = {
+                            "index": curr["index"],
+                            "start_sec": s_time,
+                            "end_sec": e_time,
+                            "duration_sec": round(stitched.shape[1] / sr, 3),
+                            "audio": str(comb_path),
+                            "transcript": m_raw if m_is_vi else m_clean,
+                            "is_vietnamese": m_is_vi,
+                            "language": "vi" if m_is_vi else m_lang,
+                        }
+                        i += 1
+                    except Exception as me:
+                        print(f"[{role}] Turn merge notice: {me}", flush=True)
+                        break
+
+                merged_candidates.append(curr)
+                i += 1
+            candidates = merged_candidates
+
+        # ── Step 3: Attach Preceding Teacher Prompt Context ──
+        if teacher_sentences and candidates:
+            for cand in candidates:
+                s_start = cand.get("start_sec", 0.0)
+                prec = [
+                    t for t in teacher_sentences
+                    if t.get("start_sec", 0) < s_start and t.get("end_sec", 0) <= s_start + 1.5
+                ]
+                if prec:
+                    cand["teacher_prompt"] = prec[-1].get("transcript", "")
+
+        # ── Step 4: ASR Error Correction BEFORE Acoustic Scoring (Single Pass!) ──
+        if is_student and candidates and self.config.get("asr_correction", {}).get("enabled", True):
             try:
                 corrector = AsrErrorCorrector(enable_llm=True)
-                candidate_turns = [
+                asr_inputs = [
                     {
                         "turn_id": idx,
-                        "raw_transcript": sent.get("transcript", ""),
-                        "transcript": sent.get("transcript", ""),
-                        "teacher_prompt": sent.get("teacher_prompt"),
+                        "raw_transcript": cand.get("transcript", ""),
+                        "transcript": cand.get("transcript", ""),
+                        "teacher_prompt": cand.get("teacher_prompt"),
                     }
-                    for idx, sent in enumerate(sentences, start=1)
+                    for idx, cand in enumerate(candidates, start=1)
                 ]
-                corrected = corrector.correct_turns(candidate_turns)
-                for sent, corr in zip(sentences, corrected):
+                corrected = corrector.correct_turns(asr_inputs)
+                for cand, corr in zip(candidates, corrected):
                     new_tr = corr.get("transcript", "").strip()
-                    old_tr = sent.get("transcript", "").strip()
-                    if new_tr and new_tr != old_tr:
-                        sent["transcript"] = new_tr
-                        sent["raw_transcript"] = old_tr
-                        if sent.get("scored", False):
-                            try:
-                                track = self.assess_track(
-                                    sent["audio"], new_tr, feedback=False, lang=lang,
-                                    feedback_mode="local", truncate=False, apply_preprocess=False,
-                                    duration_sec=sent.get("duration_sec", 0.0),
-                                )
-                                sent.update(track)
-                            except Exception as re_err:
-                                print(f"[{role}] Re-assessment notice: {re_err}")
+                    if new_tr:
+                        cand["transcript"] = new_tr
             except Exception as asr_corr_err:
                 print(f"[{role}] AsrErrorCorrector notice: {asr_corr_err}")
 
-        # ── Holistic FC/LR/GRA Evaluation via DeepSeek v4.1 Flash + Local NLP (AFTER ASR correction) ──
+        # ── Step 5: Single-Pass Eligibility + WavLM SpeechOcean762 + L2-MDD Scoring ──
+        elig_cfg = self.config.get("eligibility") or {}
+        sentences: List[Dict[str, Any]] = []
+        for cand in candidates:
+            seg_info = {
+                "index": cand["index"],
+                "start_sec": cand["start_sec"],
+                "end_sec": cand["end_sec"],
+                "duration_sec": cand["duration_sec"],
+                "path": cand["audio"],
+            }
+            tr = cand.get("transcript", "").strip()
+            t_prompt = cand.get("teacher_prompt")
+
+            if self._lang_id_cfg.get("enabled", False) and cand.get("is_vietnamese", False):
+                u = _make_unscored_turn(
+                    seg_info, tr, role=role, is_vietnamese=True, language="vi", eligibility_reason="vietnamese_speech"
+                )
+                if t_prompt:
+                    u["teacher_prompt"] = t_prompt
+                sentences.append(u)
+                continue
+
+            if not score:
+                u = _make_unscored_turn(seg_info, tr, role=role, eligibility_reason="role_unscored")
+                if t_prompt:
+                    u["teacher_prompt"] = t_prompt
+                sentences.append(u)
+                continue
+
+            is_eligible, elig_reason = check_scoring_eligibility(tr, cand.get("duration_sec", 0.0), config=elig_cfg)
+            if not is_eligible:
+                u = _make_unscored_turn(seg_info, tr, role=role, eligibility_reason=elig_reason)
+                if t_prompt:
+                    u["teacher_prompt"] = t_prompt
+                sentences.append(u)
+                continue
+
+            try:
+                track = self.assess_track(
+                    cand["audio"], tr, feedback=False, lang=lang,
+                    feedback_mode="local", truncate=False, apply_preprocess=False,
+                    duration_sec=cand.get("duration_sec", 0.0),
+                )
+                turn_obj: Dict[str, Any] = {
+                    "index": cand["index"],
+                    "start_sec": cand["start_sec"],
+                    "end_sec": cand["end_sec"],
+                    "duration_sec": cand["duration_sec"],
+                    "audio": cand["audio"],
+                    "role": role,
+                    "scored": True,
+                    "is_vietnamese": False,
+                    "language": "en",
+                    "eligibility_reason": "scored",
+                    **track,
+                }
+                if t_prompt:
+                    turn_obj["teacher_prompt"] = t_prompt
+                sentences.append(turn_obj)
+            except Exception as assess_err:
+                print(f"[{role}] assess_track notice for turn {cand['index']} ('{tr[:40]}'): {assess_err}.")
+                u = _make_unscored_turn(
+                    seg_info, tr, role=role, eligibility_reason=f"assess_error: {str(assess_err)[:40]}"
+                )
+                if t_prompt:
+                    u["teacher_prompt"] = t_prompt
+                sentences.append(u)
+
+        # ── Step 6: Holistic FC/LR/GRA Evaluation via DeepSeek v4.1 Flash + Local NLP ──
         if score and sentences:
             try:
                 from infer.hybrid_nlp_scorer import evaluate_conversation_linguistics

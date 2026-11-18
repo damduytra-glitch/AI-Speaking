@@ -329,13 +329,13 @@ export function TeacherAssessView({
 
       await saveAssessment(draftId, {
         title: customTitle.trim() || `Hội thoại với ${selectedStudent?.full_name || 'Học viên'}`,
-        score_total: Number(aiEval.score_total ?? sScores.total ?? 0),
+        score_total: Number(sScores.total ?? aiEval.score_total ?? 0),
         score_accuracy: Number(sScores.p ?? sScores.accuracy ?? sScores.total ?? 0),
-        score_fluency: Number(sScores.fc ?? sScores.fluency ?? 0),
+        score_fluency: Number(sScores.fc ?? sScores.fluency ?? aiEval.score_fluency_coherence ?? 0),
         score_prosodic: Number(sScores.prosodic ?? sScores.p ?? sScores.accuracy ?? 0),
-        score_grammar: aiEval.score_grammar ?? sScores.gra ?? null,
-        score_context: aiEval.score_context ?? aiEval.score_fluency_coherence ?? sScores.fc ?? null,
-        score_lexical: aiEval.score_lexical ?? sScores.lr ?? null,
+        score_grammar: sScores.gra ?? aiEval.score_grammar ?? null,
+        score_context: sScores.fc ?? aiEval.score_fluency_coherence ?? aiEval.score_context ?? null,
+        score_lexical: sScores.lr ?? aiEval.score_lexical ?? null,
         llm_feedback: aiEval.conversation_summary || null,
         result_json: clonedResult,
       });
@@ -402,11 +402,11 @@ export function TeacherAssessView({
 
     const sScores = analysisResult.student?.scores;
     return {
-      total: Number(aiEval?.score_total ?? sScores?.overall ?? sScores?.total ?? 0),
+      total: Number(sScores?.total ?? sScores?.overall ?? aiEval?.score_total ?? 0),
       pr: Number(sScores?.p ?? sScores?.accuracy ?? sScores?.total ?? 0),
-      fc: aiEval?.score_fluency_coherence ?? aiEval?.score_context ?? sScores?.fc ?? sScores?.context ?? null,
-      lr: aiEval?.score_lexical ?? sScores?.lr ?? sScores?.lexical ?? null,
-      gra: aiEval?.score_grammar ?? sScores?.gra ?? sScores?.grammar ?? null,
+      fc: sScores?.fc ?? sScores?.context ?? aiEval?.score_fluency_coherence ?? aiEval?.score_context ?? null,
+      lr: sScores?.lr ?? sScores?.lexical ?? aiEval?.score_lexical ?? null,
+      gra: sScores?.gra ?? sScores?.grammar ?? aiEval?.score_grammar ?? null,
     };
   }, [analysisResult, aiEval, speakerView]);
 
@@ -639,9 +639,10 @@ export function TeacherAssessView({
                   <div className="md:col-span-4 flex flex-col items-center justify-center rounded-2xl border border-slate-100 bg-slate-50/75 p-5">
                     <ScoreRingGauge
                       score={activeScores.total}
+                      max={9}
                       size={150}
                       strokeWidth={13}
-                      label="Điểm tổng / 10"
+                      label="IELTS Band / 9.0"
                     />
                   </div>
 
@@ -649,35 +650,35 @@ export function TeacherAssessView({
                     <SkillRadarChart
                       size={220}
                       skills={[
-                        { label: 'Phát âm', value: activeScores.pr },
-                        { label: 'Mạch lạc', value: activeScores.fc },
-                        { label: 'Từ vựng', value: activeScores.lr },
-                        { label: 'Ngữ pháp', value: activeScores.gra },
+                        { label: 'Pronunciation (P)', value: activeScores.pr },
+                        { label: 'Fluency (FC)', value: activeScores.fc },
+                        { label: 'Lexical (LR)', value: activeScores.lr },
+                        { label: 'Grammar (GRA)', value: activeScores.gra },
                       ]}
                     />
                   </div>
 
                   <div className="md:col-span-4 space-y-2">
                     <div className="flex items-center justify-between rounded-xl border border-slate-100 bg-slate-50/85 px-3.5 py-2.5 text-xs">
-                      <span className="font-semibold text-slate-600">Phát âm</span>
+                      <span className="font-semibold text-slate-600">Pronunciation (P) · Phát âm</span>
                       <span className="font-extrabold text-emerald-600 tabular-nums">
                         {activeScores.pr.toFixed(1)}
                       </span>
                     </div>
                     <div className="flex items-center justify-between rounded-xl border border-slate-100 bg-slate-50/85 px-3.5 py-2.5 text-xs">
-                      <span className="font-semibold text-slate-600">Mạch lạc</span>
+                      <span className="font-semibold text-slate-600">Fluency &amp; Coherence (FC)</span>
                       <span className="font-extrabold text-sky-600 tabular-nums">
                         {formatScoreValue(activeScores.fc)}
                       </span>
                     </div>
                     <div className="flex items-center justify-between rounded-xl border border-slate-100 bg-slate-50/85 px-3.5 py-2.5 text-xs">
-                      <span className="font-semibold text-slate-600">Từ vựng</span>
+                      <span className="font-semibold text-slate-600">Lexical Resource (LR)</span>
                       <span className="font-extrabold text-amber-600 tabular-nums">
                         {formatScoreValue(activeScores.lr)}
                       </span>
                     </div>
                     <div className="flex items-center justify-between rounded-xl border border-slate-100 bg-slate-50/85 px-3.5 py-2.5 text-xs">
-                      <span className="font-semibold text-slate-600">Ngữ pháp</span>
+                      <span className="font-semibold text-slate-600">Grammatical Range (GRA)</span>
                       <span className="font-extrabold text-indigo-600 tabular-nums">
                         {formatScoreValue(activeScores.gra)}
                       </span>

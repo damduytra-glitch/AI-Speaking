@@ -570,10 +570,10 @@ export function StudentDashboard({
                 <SkillRadarChart
                   size={232}
                   skills={[
-                    { label: 'Phát âm', value: skillMetrics.acc },
-                    { label: 'Mạch lạc', value: skillMetrics.ctx },
-                    { label: 'Từ vựng', value: skillMetrics.lex },
-                    { label: 'Ngữ pháp', value: skillMetrics.gra },
+                    { label: 'Pronunciation (P)', value: skillMetrics.acc },
+                    { label: 'Fluency (FC)', value: skillMetrics.ctx },
+                    { label: 'Lexical (LR)', value: skillMetrics.lex },
+                    { label: 'Grammar (GRA)', value: skillMetrics.gra },
                   ]}
                 />
               </div>

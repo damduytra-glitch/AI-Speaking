@@ -666,9 +666,10 @@ export function PracticeSessionRunner({
             <div className="lg:col-span-4 flex flex-col items-center justify-center rounded-2xl border border-slate-100 bg-slate-50/75 p-5 text-center">
               <ScoreRingGauge
                 score={summaryTotals.score_total}
+                max={9}
                 size={164}
                 strokeWidth={14}
-                label="Tổng điểm / 10"
+                label="IELTS Band / 9.0"
               />
               <div className="mt-3 inline-flex flex-col items-center rounded-2xl border border-indigo-200 bg-indigo-50/70 px-5 py-2">
                 <span className="text-[10px] font-bold uppercase tracking-wider text-indigo-600">
@@ -683,35 +684,35 @@ export function PracticeSessionRunner({
               <SkillRadarChart
                 size={235}
                 skills={[
-                  { label: 'Phát âm', value: summaryTotals.score_accuracy },
-                  { label: 'Mạch lạc', value: summaryTotals.score_context },
-                  { label: 'Từ vựng', value: summaryTotals.score_lexical },
-                  { label: 'Ngữ pháp', value: summaryTotals.score_grammar },
+                  { label: 'Pronunciation (P)', value: summaryTotals.score_accuracy },
+                  { label: 'Fluency (FC)', value: summaryTotals.score_context },
+                  { label: 'Lexical (LR)', value: summaryTotals.score_lexical },
+                  { label: 'Grammar (GRA)', value: summaryTotals.score_grammar },
                 ]}
               />
             </div>
 
             <div className="lg:col-span-4 space-y-2.5">
               <div className="flex items-center justify-between rounded-2xl border border-slate-100 bg-slate-50/85 px-4 py-3 text-xs">
-                <span className="font-semibold text-slate-600">Phát âm</span>
+                <span className="font-semibold text-slate-600">Pronunciation (P) · Phát âm</span>
                 <span className="text-base font-extrabold text-emerald-600 tabular-nums">
                   {summaryTotals.score_accuracy.toFixed(1)}
                 </span>
               </div>
               <div className="flex items-center justify-between rounded-2xl border border-slate-100 bg-slate-50/85 px-4 py-3 text-xs">
-                <span className="font-semibold text-slate-600">Mạch lạc</span>
+                <span className="font-semibold text-slate-600">Fluency &amp; Coherence (FC)</span>
                 <span className="text-base font-extrabold text-sky-600 tabular-nums">
                   {formatScoreValue(summaryTotals.score_context)}
                 </span>
               </div>
               <div className="flex items-center justify-between rounded-2xl border border-slate-100 bg-slate-50/85 px-4 py-3 text-xs">
-                <span className="font-semibold text-slate-600">Từ vựng</span>
+                <span className="font-semibold text-slate-600">Lexical Resource (LR)</span>
                 <span className="text-base font-extrabold text-amber-600 tabular-nums">
                   {formatScoreValue(summaryTotals.score_lexical)}
                 </span>
               </div>
               <div className="flex items-center justify-between rounded-2xl border border-slate-100 bg-slate-50/85 px-4 py-3 text-xs">
-                <span className="font-semibold text-slate-600">Ngữ pháp</span>
+                <span className="font-semibold text-slate-600">Grammatical Range (GRA)</span>
                 <span className="text-base font-extrabold text-indigo-600 tabular-nums">
                   {formatScoreValue(summaryTotals.score_grammar)}
                 </span>
@@ -1198,9 +1199,10 @@ export function PracticeSessionRunner({
             <div className="flex flex-col items-center justify-center py-2">
               <ScoreRingGauge
                 score={submittingAnswer ? null : currentSavedAnswer ? currentSavedAnswer.score_total : null}
+                max={9}
                 size={168}
                 strokeWidth={14}
-                label="Tổng điểm / 10"
+                label="IELTS Band / 9.0"
                 sublabel={
                   submittingAnswer
                     ? 'Đang phân tích phát âm, ngữ điệu và ngữ pháp...'
@@ -1213,25 +1215,25 @@ export function PracticeSessionRunner({
 
             <div className="space-y-2.5">
               <div className="flex items-center justify-between rounded-2xl border border-slate-100 bg-slate-50/90 px-4 py-3 text-xs">
-                <span className="font-semibold text-slate-600">Phát âm</span>
+                <span className="font-semibold text-slate-600">Pronunciation (P) · Phát âm</span>
                 <span className="font-extrabold text-emerald-600 tabular-nums">
                   {currentSavedAnswer ? currentSavedAnswer.score_accuracy.toFixed(1) : '--'}
                 </span>
               </div>
               <div className="flex items-center justify-between rounded-2xl border border-slate-100 bg-slate-50/90 px-4 py-3 text-xs">
-                <span className="font-semibold text-slate-600">Mạch lạc</span>
+                <span className="font-semibold text-slate-600">Fluency &amp; Coherence (FC)</span>
                 <span className="font-extrabold text-sky-600 tabular-nums">
                   {currentSavedAnswer ? formatScoreValue(currentSavedAnswer.score_context) : '--'}
                 </span>
               </div>
               <div className="flex items-center justify-between rounded-2xl border border-slate-100 bg-slate-50/90 px-4 py-3 text-xs">
-                <span className="font-semibold text-slate-600">Từ vựng</span>
+                <span className="font-semibold text-slate-600">Lexical Resource (LR)</span>
                 <span className="font-extrabold text-amber-600 tabular-nums">
                   {currentSavedAnswer ? formatScoreValue(currentSavedAnswer.score_lexical) : '--'}
                 </span>
               </div>
               <div className="flex items-center justify-between rounded-2xl border border-slate-100 bg-slate-50/90 px-4 py-3 text-xs">
-                <span className="font-semibold text-slate-600">Ngữ pháp</span>
+                <span className="font-semibold text-slate-600">Grammatical Range (GRA)</span>
                 <span className="font-extrabold text-indigo-600 tabular-nums">
                   {currentSavedAnswer ? formatScoreValue(currentSavedAnswer.score_grammar) : '--'}
                 </span>

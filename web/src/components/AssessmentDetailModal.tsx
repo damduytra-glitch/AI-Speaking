@@ -169,38 +169,38 @@ export function AssessmentDetailModal({ assessment, onClose }: AssessmentDetailM
 
           <div className="grid items-center gap-6 md:grid-cols-12">
             <div className="md:col-span-4 flex flex-col items-center justify-center rounded-2xl border border-slate-100 bg-slate-50/75 p-5">
-              <ScoreRingGauge score={total} size={146} strokeWidth={13} label="Điểm tổng / 10" />
+              <ScoreRingGauge score={total} max={9} size={146} strokeWidth={13} label="IELTS Band / 9.0" />
             </div>
 
             <div className="md:col-span-4 flex justify-center">
               <SkillRadarChart
                 size={215}
                 skills={[
-                  { label: 'Phát âm', value: Number(prVal) },
-                  { label: 'Mạch lạc', value: ctxVal != null ? Number(ctxVal) : null },
-                  { label: 'Từ vựng', value: lexVal != null ? Number(lexVal) : gramVal != null ? Number(gramVal) : null },
-                  { label: 'Ngữ pháp', value: gramVal != null ? Number(gramVal) : null },
+                  { label: 'Pronunciation (P)', value: Number(prVal) },
+                  { label: 'Fluency (FC)', value: ctxVal != null ? Number(ctxVal) : null },
+                  { label: 'Lexical (LR)', value: lexVal != null ? Number(lexVal) : gramVal != null ? Number(gramVal) : null },
+                  { label: 'Grammar (GRA)', value: gramVal != null ? Number(gramVal) : null },
                 ]}
               />
             </div>
 
             <div className="md:col-span-4 space-y-2">
               <div className="flex items-center justify-between rounded-xl border border-slate-100 bg-slate-50/85 px-3.5 py-2.5 text-xs">
-                <span className="font-semibold text-slate-600">Phát Âm</span>
+                <span className="font-semibold text-slate-600">Pronunciation (P) · Phát âm</span>
                 <span className="font-extrabold text-emerald-600 tabular-nums">{Number(prVal).toFixed(1)}</span>
               </div>
               <div className="flex items-center justify-between rounded-xl border border-slate-100 bg-slate-50/85 px-3.5 py-2.5 text-xs">
-                <span className="font-semibold text-slate-600">Mạch Lạc</span>
+                <span className="font-semibold text-slate-600">Fluency &amp; Coherence (FC)</span>
                 <span className="font-extrabold text-sky-600 tabular-nums">{formatScoreValue(ctxVal)}</span>
               </div>
               <div className="flex items-center justify-between rounded-xl border border-slate-100 bg-slate-50/85 px-3.5 py-2.5 text-xs">
-                <span className="font-semibold text-slate-600">Từ Vựng</span>
+                <span className="font-semibold text-slate-600">Lexical Resource (LR)</span>
                 <span className="font-extrabold text-amber-600 tabular-nums">
                   {formatScoreValue(lexVal ?? gramVal)}
                 </span>
               </div>
               <div className="flex items-center justify-between rounded-xl border border-slate-100 bg-slate-50/85 px-3.5 py-2.5 text-xs">
-                <span className="font-semibold text-slate-600">Ngữ Pháp</span>
+                <span className="font-semibold text-slate-600">Grammatical Range (GRA)</span>
                 <span className="font-extrabold text-indigo-600 tabular-nums">{formatScoreValue(gramVal)}</span>
               </div>
             </div>

@@ -21,8 +21,8 @@ from paths import PRONUNCIATION_CONFIG, ROOT
 PathLike = Union[str, Path]
 WHISPER_SR = 16000
 WHISPER_CHUNK_SEC = 30.0
-WHISPER_DEFAULT_MODEL = "openai/whisper-large-v3"
-LOCAL_WHISPER_DIR = ROOT / "pretrained_models" / "whisper-large-v3"
+WHISPER_DEFAULT_MODEL = "openai/whisper-large-v3-turbo"
+LOCAL_WHISPER_DIR = ROOT / "pretrained_models" / "whisper-large-v3-turbo"
 DEFAULT_ALLOWED_LANGUAGES = ("en",)  # Strictly English-only: no Vietnamese detection/transcription
 
 

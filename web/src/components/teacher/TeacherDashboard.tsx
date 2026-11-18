@@ -388,10 +388,10 @@ export function TeacherDashboard({
                 <SkillRadarChart
                   size={232}
                   skills={[
-                    { label: 'Phát âm', value: classAnalytics?.avgAccuracy ?? null },
-                    { label: 'Mạch lạc', value: classAnalytics?.avgContext ?? null },
-                    { label: 'Từ vựng', value: classAnalytics?.avgLexical ?? null },
-                    { label: 'Ngữ pháp', value: classAnalytics?.avgGrammar ?? null },
+                    { label: 'Pronunciation (P)', value: classAnalytics?.avgAccuracy ?? null },
+                    { label: 'Fluency (FC)', value: classAnalytics?.avgContext ?? null },
+                    { label: 'Lexical (LR)', value: classAnalytics?.avgLexical ?? null },
+                    { label: 'Grammar (GRA)', value: classAnalytics?.avgGrammar ?? null },
                   ]}
                 />
               </div>
