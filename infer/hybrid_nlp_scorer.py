@@ -398,6 +398,7 @@ def evaluate_conversation_linguistics(
     endpoint: Optional[str] = None,
     model: Optional[str] = None,
     api_key: Optional[str] = None,
+    precomputed_llm_results: Optional[Dict[int, Dict[str, float]]] = None,
 ) -> List[Dict[str, Any]]:
     """
     Holistically processes all turns of a conversation:
@@ -411,10 +412,13 @@ def evaluate_conversation_linguistics(
 
     scored_turns = [t for t in turns if t.get("scored", True) and t.get("transcript")]
 
-    # Exactly 1 LLM call for all turns
-    llm_results = call_single_llm_assessment(
-        scored_turns, endpoint=endpoint, model=model, api_key=api_key
-    )
+    # Use precomputed LLM batch (when overlapped with GPU scoring) or run 1 LLM call now
+    if precomputed_llm_results is not None:
+        llm_results = precomputed_llm_results
+    else:
+        llm_results = call_single_llm_assessment(
+            scored_turns, endpoint=endpoint, model=model, api_key=api_key
+        )
 
     # Empirical Bayes speaker-level acoustic pronunciation mean (reduces single-clip frame jitter)
     p_cont_vals = []
