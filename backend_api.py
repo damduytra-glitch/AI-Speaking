@@ -1,8 +1,7 @@
 """FastAPI backend for SpeakAI pronunciation assessment.
 
-When running on Kaggle: pipeline, extract_embedder, generate_turn_feedback,
-generate_overall_summary are expected to be defined in the notebook's global
-scope BEFORE this file is executed (%run or exec).
+When running on Kaggle: pipeline and extract_embedder are expected to be defined
+in the notebook's global scope BEFORE this file is executed (%run or exec).
 
 When running standalone: those globals must be defined or the relevant
 endpoints will return a 503 error.
@@ -22,7 +21,7 @@ import time
 import traceback
 import uuid
 from pathlib import Path
-from typing import Optional
+from typing import Any, Dict, Optional
 
 try:
     import numpy as np
@@ -213,7 +212,7 @@ def _verify_supabase_jwt(token: str) -> dict:
             f"{base_url}/rest/v1/profiles",
             params={
                 "id": f"eq.{uid}",
-                "select": "id,role,status,email,voice_embeddings",
+                "select": "id,role,status,email",
                 "limit": "1",
             },
             headers={
@@ -251,7 +250,6 @@ def _verify_supabase_jwt(token: str) -> dict:
         "role": str(profile.get("role") or "student").strip().lower(),
         "status": status,
         "email": profile.get("email") or user_data.get("email") or "",
-        "voice_embeddings": profile.get("voice_embeddings"),
         "token": token,
     }
     with _auth_cache_lock:
@@ -354,46 +352,27 @@ _tasks_lock = threading.Lock()
 _gpu_semaphore = threading.Semaphore(1)
 _gpu_active_task: Optional[str] = None
 _gpu_queue_count = 0
-_classroom_embedder = None
 
 
 def _resolve_classroom_analyzer():
-    """Build or reuse ClassroomLanguageAnalyzer sharing existing GPU models when available."""
+    """Build or reuse diarization-free ClassroomLanguageAnalyzer sharing Whisper Large-v3-Turbo."""
     custom = _get_global("classroom_analyzer")
     if custom is not None:
         return custom
 
-    import sys
-    import torch
     import infer.transcribe as transcribe_mod
     from classroom_lang.analyzer import ClassroomLanguageAnalyzer
-    from paths import SPEAKER_DIARIZE_DIR
 
-    global _classroom_embedder
     pipe = _get_global("pipeline")
-    embedder = (
-        _get_global("extract_embedder")
-        or getattr(getattr(pipe, "diarizer", None), "embedder", None)
-        or _classroom_embedder
-    )
-    if embedder is None:
-        if SPEAKER_DIARIZE_DIR.is_dir() and str(SPEAKER_DIARIZE_DIR) not in sys.path:
-            sys.path.insert(0, str(SPEAKER_DIARIZE_DIR))
-        from speaker_diarize.embedding import ERes2NetEmbedder
-
-        dev = "cuda:0" if torch.cuda.is_available() else "cpu"
-        _classroom_embedder = ERes2NetEmbedder(device=dev)
-        embedder = _classroom_embedder
-
     transcriber = transcribe_mod._transcriber
     if transcriber is None:
         base_asr = dict(getattr(pipe, "_asr_cfg", None) or {})
-        base_asr.setdefault("model_name", "openai/whisper-large-v3")
+        base_asr.setdefault("model_name", "openai/whisper-large-v3-turbo")
         base_asr["language"] = "auto"
         base_asr["allowed_languages"] = ["en", "vi"]
         transcriber = transcribe_mod.get_transcriber(asr_config=base_asr)
 
-    return ClassroomLanguageAnalyzer(embedder=embedder, transcriber=transcriber)
+    return ClassroomLanguageAnalyzer(transcriber=transcriber)
 
 
 def _enqueue_assessment(
@@ -415,7 +394,6 @@ def _enqueue_assessment(
             "status": "processing",
             "step": "Đang tải file âm thanh lên server...",
             "result": None,
-            "llm_feedback": None,
         }
     _prune_old_tasks()
 
@@ -503,13 +481,9 @@ def assess_start_api(
     teacher_embeddings_json: str = Form("[]"),
     student_embeddings_json: str = Form("[]"),
     score_teacher: bool = Form(False),
-    diarize: str = Form("true"),
-    reference_text: Optional[str] = Form(None),
-    task_type: Optional[str] = Form(None),
     user: dict = Depends(require_active_user),
 ):
-    is_diarize = _parse_bool_flag(diarize, default=True)
-    if is_diarize and user.get("role") not in ("teacher", "admin"):
+    if user.get("role") not in ("teacher", "admin"):
         return JSONResponse(
             {
                 "success": False,
@@ -525,9 +499,7 @@ def assess_start_api(
             teacher_embeddings_json=teacher_embeddings_json,
             student_embeddings_json=student_embeddings_json,
             score_teacher=_parse_bool_flag(score_teacher, default=False),
-            diarize=is_diarize,
-            reference_text=reference_text,
-            task_type=task_type,
+            diarize=True,
         )
     except Exception as e:
         return JSONResponse({"success": False, "error": str(e)}, status_code=500)
@@ -555,23 +527,119 @@ def assess_practice_api(
         return JSONResponse({"success": False, "error": str(e)}, status_code=500)
 
 
-def _convert_paths_to_urls(node, public_url: str) -> None:
-    audio_prefix = f"{AUDIO_TEMP_DIR.rstrip('/')}/"
-    if isinstance(node, dict):
-        for k, v in list(node.items()):
-            if isinstance(v, (os.PathLike, Path)):
-                v = str(v)
-                node[k] = v
-            if k in ("audio", "full_audio") and isinstance(v, str) and v.startswith(audio_prefix):
-                rel_path = v[len(audio_prefix):]
-                node[k] = f"{public_url}/audio/{rel_path}"
-            else:
-                _convert_paths_to_urls(v, public_url)
-    elif isinstance(node, list):
-        for i, item in enumerate(node):
-            if isinstance(item, (os.PathLike, Path)):
-                node[i] = str(item)
-            _convert_paths_to_urls(node[i], public_url)
+def _path_to_public_url(path_val: Any, public_url: Optional[str]) -> Optional[str]:
+    """Convert a local AUDIO_TEMP_DIR path into a public HTTP URL; never leak local server paths."""
+    if not path_val:
+        return None
+    s = str(path_val)
+    if s.startswith(("http://", "https://")):
+        return s
+    if not public_url:
+        return None
+    norm_prefix = f"{os.path.normpath(AUDIO_TEMP_DIR)}{os.sep}"
+    norm_s = os.path.normpath(s)
+    if norm_s.startswith(norm_prefix):
+        rel = norm_s[len(norm_prefix):].replace("\\", "/")
+        return f"{public_url.rstrip('/')}/audio/{rel}"
+    return None
+
+
+def _clean_scores_dict(raw: Any) -> Dict[str, float]:
+    """Return only the 5 canonical IELTS score fields (total, p, fc, lr, gra) with zero duplicate aliases."""
+    if not isinstance(raw, dict) or not raw:
+        return {}
+    ov_val = raw.get("overall", raw.get("score_total", raw.get("total")))
+    p_val = raw.get("p", raw.get("score_pronunciation", raw.get("accuracy")))
+    fc_val = raw.get("fc", raw.get("score_fluency_coherence", raw.get("fluency")))
+    lr_val = raw.get("lr", raw.get("score_lexical", raw.get("lexical")))
+    gra_val = raw.get("gra", raw.get("score_grammar", raw.get("grammar")))
+
+    out: Dict[str, float] = {}
+    if ov_val is not None:
+        out["total"] = round(float(ov_val), 1)
+    if p_val is not None:
+        out["p"] = round(float(p_val), 1)
+    if fc_val is not None:
+        out["fc"] = round(float(fc_val), 1)
+    if lr_val is not None:
+        out["lr"] = round(float(lr_val), 1)
+    if gra_val is not None:
+        out["gra"] = round(float(gra_val), 1)
+    return out
+
+
+def _clean_turn_item(
+    item: Dict[str, Any],
+    public_url: Optional[str],
+    *,
+    include_audio: bool = True,
+) -> Dict[str, Any]:
+    """Keep only fields consumed by the frontend UI; drop alignments, nulls, and local disk paths."""
+    cleaned: Dict[str, Any] = {
+        "role": item.get("role", "student"),
+        "start_sec": item.get("start_sec", 0.0),
+        "end_sec": item.get("end_sec", 0.0),
+        "duration_sec": item.get("duration_sec", 0.0),
+        "transcript": item.get("transcript", ""),
+        "scored": bool(item.get("scored", False)),
+    }
+    elig = item.get("eligibility_reason")
+    if elig and elig != "scored":
+        cleaned["eligibility_reason"] = elig
+    if include_audio:
+        audio_url = _path_to_public_url(item.get("audio"), public_url)
+        if audio_url:
+            cleaned["audio"] = audio_url
+    scores = _clean_scores_dict(item.get("scores"))
+    if scores:
+        cleaned["scores"] = scores
+    words_detail = item.get("words_detail")
+    if words_detail:
+        cleaned["words_detail"] = words_detail
+    errors = item.get("errors")
+    if isinstance(errors, dict) and errors.get("phonemes"):
+        cleaned["errors"] = {"phonemes": errors["phonemes"]}
+    return cleaned
+
+
+def _clean_speaker_block(block: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    if not isinstance(block, dict):
+        return None
+    out: Dict[str, Any] = {
+        "role": block.get("role", "student"),
+        "scored": bool(block.get("scored", False)),
+        "transcript": block.get("transcript", ""),
+        "scores": _clean_scores_dict(block.get("scores")),
+    }
+    if block.get("message"):
+        out["message"] = block["message"]
+    return out
+
+
+def _sanitize_assessment_result(raw_result: Dict[str, Any], public_url: Optional[str]) -> Dict[str, Any]:
+    """Produce a lean, frontend-ready assessment response with zero internal/duplicate bloat."""
+    student = _clean_speaker_block(raw_result.get("student"))
+    teacher = _clean_speaker_block(raw_result.get("teacher"))
+    mode = raw_result.get("mode", "single_speaker" if teacher is None else "teacher_student")
+    include_audio = mode != "single_speaker"
+
+    raw_turns = (raw_result.get("dialogue") or {}).get("turns") or []
+    cleaned_turns = [_clean_turn_item(t, public_url, include_audio=include_audio) for t in raw_turns]
+
+    out: Dict[str, Any] = {
+        "mode": mode,
+        "duration_sec": round(float(raw_result.get("duration_sec") or 0.0), 2),
+        "student": student,
+        "dialogue": {"turns": cleaned_turns},
+    }
+    if teacher is not None:
+        out["teacher"] = teacher
+    otf = raw_result.get("overall_transformer_feedback")
+    if isinstance(otf, dict) and (otf.get("summary") or otf.get("tips")):
+        out["overall_transformer_feedback"] = {
+            k: v for k, v in otf.items() if k in ("summary", "tips") and v
+        }
+    return out
 
 
 def process_assessment(
@@ -629,21 +697,10 @@ def process_assessment(
                 score_teacher=score_teacher,
             )
 
-        diar = raw_result.get("diarization", {})
-        if raw_result.get("teacher") and diar.get("teacher"):
-            raw_result["teacher"]["full_audio"] = str(diar["teacher"])
-        if raw_result.get("student") and diar.get("student"):
-            raw_result["student"]["full_audio"] = str(diar["student"])
-
-        if PUBLIC_URL:
-            _convert_paths_to_urls(raw_result, PUBLIC_URL)
-
-        if diarize and os.path.exists(conv_path):
-            os.remove(conv_path)
+        clean_result = _sanitize_assessment_result(raw_result, PUBLIC_URL)
 
         total_time = time.time() - task_start_time
-        tasks[task_id]["result"] = raw_result
-        tasks[task_id]["llm_feedback"] = None
+        tasks[task_id]["result"] = clean_result
         tasks[task_id]["step"] = f"Hoàn tất phân tích âm học ({total_time:.1f}s)."
         tasks[task_id]["processing_time_sec"] = round(total_time, 2)
         tasks[task_id]["status"] = "completed"
@@ -654,6 +711,15 @@ def process_assessment(
         tasks[task_id]["status"] = "error"
         tasks[task_id]["error"] = str(e)
     finally:
+        if os.path.exists(conv_path):
+            try:
+                os.remove(conv_path)
+            except OSError:
+                pass
+        if not diarize:
+            single_split_dir = Path(conv_path).parent / f"{Path(conv_path).stem}_single_split"
+            if single_split_dir.exists():
+                shutil.rmtree(single_split_dir, ignore_errors=True)
         _gpu_active_task = None
         _gpu_semaphore.release()
         try:
@@ -674,7 +740,7 @@ def assess_status(task_id: str, user: dict = Depends(require_active_user)):
     owner_id = task.get("owner_id")
     if owner_id and owner_id != user["id"] and user.get("role") != "admin":
         return JSONResponse({"success": False, "error": "Bạn không có quyền xem tiến trình bài chấm của người khác."}, status_code=403)
-    payload = {k: v for k, v in task.items() if k != "owner_id"}
+    payload = {k: v for k, v in task.items() if k != "owner_id" and v is not None}
     return JSONResponse({"success": True, "data": jsonable_encoder(payload)})
 
 
@@ -682,13 +748,10 @@ def assess_status(task_id: str, user: dict = Depends(require_active_user)):
 def classroom_analyze_start_api(
     background_tasks: BackgroundTasks,
     audio: UploadFile = File(...),
-    teacher_embeddings_json: str = Form("[]"),
-    teacher_id: Optional[str] = Form(None),
-    teacher_threshold: float = Form(0.40),
-    vad_threshold_db: float = Form(-40.0),
     user: dict = Depends(require_active_user),
 ):
-    """Analyze a full classroom recording: Teacher-only diarization + EN/VI word ratio (speech only)."""
+    """Analyze a full classroom recording without diarization:
+    Audio -> Whisper (Word Timestamps) -> Lingua (EN/VI) -> Time Grouping -> Language Timeline."""
     role = user.get("role")
     if role not in ("admin", "teacher"):
         return JSONResponse(
@@ -696,42 +759,11 @@ def classroom_analyze_start_api(
             status_code=403,
         )
 
-    if role == "teacher" and teacher_id and teacher_id.strip() != str(user["id"]):
-        return JSONResponse(
-            {"success": False, "error": "Giáo viên chỉ được phép phân tích lớp học bằng chính giọng của mình."},
-            status_code=403,
-        )
-
-    raw_emb_source = teacher_embeddings_json
-    if (not raw_emb_source or raw_emb_source.strip() in ("", "[]", "null")) and role == "teacher" and user.get("voice_embeddings"):
-        raw_emb_source = json.dumps(user["voice_embeddings"])
-
-    try:
-        teacher_emb = _parse_embedding_json(raw_emb_source)
-    except (json.JSONDecodeError, TypeError, ValueError) as exc:
-        return JSONResponse(
-            {"success": False, "error": f"teacher_embeddings_json không hợp lệ: {exc}"},
-            status_code=400,
-        )
-
-    if teacher_emb is None:
-        return JSONResponse(
-            {
-                "success": False,
-                "error": "Thiếu mẫu giọng của Giáo viên (voice_embeddings). Vui lòng chọn giáo viên đã đăng ký giọng.",
-            },
-            status_code=400,
-        )
-
-    t_thresh = max(0.05, min(0.95, float(teacher_threshold)))
-    v_thresh = max(-80.0, min(-5.0, float(vad_threshold_db)))
-
     task_id = str(uuid.uuid4())
     with _tasks_lock:
         tasks[task_id] = {
             "owner_id": user["id"],
             "status": "processing",
-            "task_kind": "classroom_language",
             "step": "Đang tải file audio buổi học lên server...",
             "result": None,
         }
@@ -764,9 +796,6 @@ def classroom_analyze_start_api(
         process_classroom_analysis,
         task_id,
         conv_path,
-        teacher_emb,
-        t_thresh,
-        v_thresh,
     )
     return JSONResponse({"success": True, "task_id": task_id})
 
@@ -774,9 +803,6 @@ def classroom_analyze_start_api(
 def process_classroom_analysis(
     task_id: str,
     conv_path: str,
-    teacher_emb: np.ndarray,
-    teacher_threshold: float,
-    vad_threshold_db: float,
 ):
     global _gpu_active_task, _gpu_queue_count
     task_start_time = time.time()
@@ -793,14 +819,11 @@ def process_classroom_analysis(
         analyzer = _resolve_classroom_analyzer()
         result = analyzer.analyze(
             conv_path,
-            teacher_emb,
-            teacher_threshold=teacher_threshold,
-            vad_threshold_db=vad_threshold_db,
             progress_callback=lambda msg: tasks[task_id].update({"step": msg}),
         )
         total_time = time.time() - task_start_time
         tasks[task_id]["result"] = result
-        tasks[task_id]["step"] = f"Hoàn tất phân tích ngôn ngữ buổi học ({total_time:.1f}s)."
+        tasks[task_id]["step"] = f"Hoàn tất phân tích Language Timeline ({total_time:.1f}s)."
         tasks[task_id]["processing_time_sec"] = round(total_time, 2)
         tasks[task_id]["status"] = "completed"
         print(f"[Classroom] Task {task_id[:8]} hoàn tất trong {total_time:.1f}s")
@@ -837,7 +860,7 @@ def classroom_status(task_id: str, user: dict = Depends(require_active_user)):
     owner_id = task.get("owner_id")
     if owner_id and owner_id != user["id"] and user.get("role") != "admin":
         return JSONResponse({"success": False, "error": "Bạn không có quyền xem kết quả phân tích của giáo viên khác."}, status_code=403)
-    payload = {k: v for k, v in task.items() if k != "owner_id"}
+    payload = {k: v for k, v in task.items() if k != "owner_id" and v is not None}
     return JSONResponse({"success": True, "data": jsonable_encoder(payload)})
 
 
@@ -948,8 +971,8 @@ async def ai_eval_proxy_api(request: Request, user: dict = Depends(require_activ
                 "Authorization": f"Bearer {stored_key}",
                 "x-api-key": stored_key,
             },
-            json={"model": model, "messages": safe_messages, "temperature": temp_val},
-            timeout=30,
+            json={"model": model, "messages": safe_messages, "temperature": temp_val, "max_tokens": 8192},
+            timeout=90,
         )
         if not upstream_resp.ok:
             return JSONResponse(

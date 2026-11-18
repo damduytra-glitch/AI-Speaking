@@ -46,6 +46,8 @@ GENERAL LINGUISTIC RULES (NO GUESSING, NO INVENTING CONTENT):
      * Numbers & Age: Resolve phonetically distorted numbers (e.g., "How old are you?" -> resolve to standard digits e.g. "8 years old").
      * Category questions (fruit, food, drink, color, weather, animal): When the child's acoustic token matches the question category phonetically (e.g., "orange juice", "turquoise", "grapes", "sweet", "sunny", "rabbit"), select the genuine English vocabulary that matches both the acoustic trace and the question topic.
      * Category Stutters & Truncated Onsets: When a child stutters, pauses, or pronounces only the initial syllables/onset of a target category vocabulary (e.g. "tur- tur-" or "tur" when answering a color question, "straw-" for fruit, "wa-" for watermelon/water), resolve it to the full intended English target word (e.g. "I like turquoise.", "strawberry", "watermelon").
+     * Alternative/Clarification Questions ("X or X?"): In English, a clarification question never contrasts two identical words ("A or A?"). When ASR outputs an identical pair, disambiguate the phonetically close minimal pair using the interviewer's question topic (e.g. "food" vs "fruit").
+     * Age-Appropriate Domain Disambiguation: For young learners (ages 7-12), if an acoustic token is an incongruous adult term (e.g. alcoholic beverages) that is phonetically close to an everyday child-appropriate word in the asked category (e.g. "cola" or "water" for drink), resolve it to the phonetically closest age-appropriate word.
      * Capitalize proper names, brand names (e.g. "Coca-Cola"), and sentence starts.
 
 3. FAITHFULNESS & PRESERVATION OF CHILD SPEECH:
@@ -67,10 +69,15 @@ def normalize_whitespace(text: str) -> str:
 
 
 def deterministic_clean_transcript(text: str, teacher_prompt: Optional[str] = None) -> str:
-    """Minimal whitespace normalizer without heuristic word manipulation."""
+    """Minimal whitespace and ALL-CAPS normalizer without heuristic word manipulation."""
     s = normalize_whitespace(text)
     if not s:
         return ""
+    # Normalize ALL-CAPS ASR outputs to natural sentence case (preserving letter-by-letter spellings like D-U-C)
+    is_spelling = bool(re.match(r"^[A-Za-z](?:-[A-Za-z])+\.?$", s.replace(" ", "")))
+    if not is_spelling and s.isupper() and len(s) > 2:
+        s = s[0].upper() + s[1:].lower()
+        s = re.sub(r"\bi('m|'ll|'ve|'d)?\b", lambda m: "I" + (m.group(1) or ""), s)
     if not s.endswith((".", "!", "?")):
         s += "."
     return s
@@ -85,7 +92,7 @@ class AsrErrorCorrector:
         model: Optional[str] = None,
         api_key: Optional[str] = None,
         enable_llm: bool = True,
-        timeout: float = 60.0,
+        timeout: float = 90.0,
     ):
         self.enable_llm = enable_llm
         self.timeout = timeout
@@ -124,61 +131,77 @@ class AsrErrorCorrector:
         items_payload = [{
             "id": t.get("turn_id", idx + 1),
             "q": t.get("teacher_prompt", ""),
-            "a": t.get("raw_transcript", t.get("transcript", "")),
+            "a": t.get("transcript", t.get("raw_transcript", "")),
         } for idx, t in enumerate(results)]
 
-        try:
-            import requests
+        import requests
 
-            # Strictly use deepseek-v4.1-flash in 1 prompt (no fallback models)
-            resp = requests.post(
-                self.endpoint,
-                headers={
-                    "Content-Type": "application/json",
-                    "Authorization": f"Bearer {self.api_key}",
-                    "x-api-key": self.api_key,
-                },
-                json={
-                    "model": "deepseek-v4.1-flash",
-                    "messages": [
-                        {"role": "system", "content": SYSTEM_PROMPT},
-                        {"role": "user", "content": json.dumps(items_payload, ensure_ascii=False, separators=(',', ':'))},
-                    ],
-                    "temperature": 0.0,
-                    "max_tokens": 2048,
-                },
-                timeout=self.timeout,
-            )
+        for attempt in range(3):
+            try:
+                # Strictly use deepseek-v4.1-flash in 1 prompt with sufficient reasoning budget
+                resp = requests.post(
+                    self.endpoint,
+                    headers={
+                        "Content-Type": "application/json",
+                        "Authorization": f"Bearer {self.api_key}",
+                        "x-api-key": self.api_key,
+                    },
+                    json={
+                        "model": self.model or "deepseek-v4.1-flash",
+                        "messages": [
+                            {"role": "system", "content": SYSTEM_PROMPT},
+                            {"role": "user", "content": json.dumps(items_payload, ensure_ascii=False, separators=(',', ':'))},
+                        ],
+                        "temperature": 0.0,
+                        "max_tokens": 8192,
+                    },
+                    timeout=self.timeout,
+                )
 
-            if not resp.ok:
-                logger.warning(f"[AsrCorrector] HTTP {resp.status_code}: {resp.text[:100]}. Retaining baseline.")
-                return results
+                if not resp.ok:
+                    logger.warning(f"[AsrCorrector] Attempt {attempt + 1} HTTP {resp.status_code}: {resp.text[:100]}")
+                    continue
 
-            msg = resp.json()["choices"][0]["message"]
-            content = (msg.get("content") or "").strip()
-            if not content:
-                logger.warning("[AsrCorrector] Empty content from deepseek-v4.1-flash. Retaining baseline.")
-                return results
+                msg = resp.json()["choices"][0]["message"]
+                content = (msg.get("content") or "").strip()
+                if not content:
+                    logger.warning(f"[AsrCorrector] Attempt {attempt + 1} empty content from {self.model}, retrying...")
+                    continue
 
-            if content.startswith("```"):
-                content = re.sub(r"^```\w*\n", "", content)
-                content = re.sub(r"\n```$", "", content)
+                if content.startswith("```"):
+                    content = re.sub(r"^```\w*\n", "", content)
+                    content = re.sub(r"\n```$", "", content)
 
-            match = re.search(r"\[\s*\{.*\}\s*\]", content, flags=re.DOTALL)
-            raw_json = match.group(0) if match else content
-            corrected_list = json.loads(raw_json)
-            corr_map = {}
-            for x in corrected_list:
-                if "id" in x:
-                    val = x.get("text", x.get("corrected", ""))
-                    if isinstance(val, str) and val.strip():
-                        corr_map[x["id"]] = val.strip()
+                match = re.search(r"\[\s*\{.*\}\s*\]", content, flags=re.DOTALL)
+                raw_json = match.group(0) if match else content
+                corrected_list = None
+                try:
+                    corrected_list = json.loads(raw_json)
+                except Exception:
+                    objs = re.findall(r"\{[^{}]+\}", content)
+                    salvaged = []
+                    for o in objs:
+                        try:
+                            salvaged.append(json.loads(o))
+                        except Exception:
+                            pass
+                    if salvaged:
+                        corrected_list = salvaged
 
-            for idx, t in enumerate(results, start=1):
-                tid = t.get("turn_id", idx)
-                if tid in corr_map:
-                    t["transcript"] = corr_map[tid]
-        except Exception as exc:
-            logger.warning(f"[AsrCorrector] LLM notice ({exc}). Retaining baseline.")
+                if isinstance(corrected_list, list) and corrected_list:
+                    corr_map = {}
+                    for x in corrected_list:
+                        if "id" in x:
+                            val = x.get("text", x.get("corrected", ""))
+                            if isinstance(val, str) and val.strip():
+                                corr_map[x["id"]] = val.strip()
+                    if corr_map:
+                        for idx, t in enumerate(results, start=1):
+                            tid = t.get("turn_id", idx)
+                            if tid in corr_map:
+                                t["transcript"] = corr_map[tid]
+                        return results
+            except Exception as exc:
+                logger.warning(f"[AsrCorrector] Attempt {attempt + 1} LLM notice ({exc}).")
 
         return results

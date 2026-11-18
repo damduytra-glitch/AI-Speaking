@@ -40,7 +40,6 @@ import {
 import {
   formatScoreValue,
   getExamTypeName,
-  parseVoiceEmbeddings,
   scoreTextColorClass,
 } from '@/lib/utils';
 import { Modal } from '@/components/ui/Modal';
@@ -105,7 +104,6 @@ export function PracticeSessionRunner({
 }: PracticeSessionRunnerProps) {
   const { showToast } = useToast();
   const questions = useMemo(() => questionSet.questions || [], [questionSet.questions]);
-  const studentEmb = useMemo(() => parseVoiceEmbeddings(currentUser), [currentUser]);
 
   const [sessionId, setSessionId] = useState<string | null>(initialSession?.id || null);
   const [phase, setPhase] = useState<'active' | 'finalizing' | 'summary'>('active');
@@ -283,9 +281,9 @@ export function PracticeSessionRunner({
         audioUrl = null;
       }
 
-      const gpuRes = await assessSingleAnswer(gpuUrl, blob, studentEmb, {
+      const gpuRes = await assessSingleAnswer(gpuUrl, blob, {
         taskType: q.task_type,
-        referenceText: q.reference_text || undefined,
+        referenceText: q.reference_text || q.question_text || undefined,
       });
 
       const sData = gpuRes.student || {};
@@ -309,21 +307,25 @@ export function PracticeSessionRunner({
         gemini_eval: geminiEval,
       };
 
+      const pronScore = Number(
+        rawScores.p ?? rawScores.score_pronunciation ?? rawScores.accuracy ?? rawScores.total ?? 0,
+      );
+
       return {
         question: q,
         transcript,
-        score_total: Number(geminiEval.score_total ?? rawScores.total ?? 0),
-        score_accuracy: Number(rawScores.accuracy ?? rawScores.total ?? 0),
-        score_fluency: Number(rawScores.fluency ?? 0),
-        score_prosodic: Number(rawScores.prosodic ?? 0),
-        score_grammar: geminiEval.score_grammar ?? null,
-        score_context: geminiEval.score_context ?? geminiEval.score_fluency_coherence ?? null,
-        score_lexical: geminiEval.score_lexical ?? null,
+        score_total: Number(geminiEval.score_total ?? rawScores.overall ?? rawScores.total ?? 0),
+        score_accuracy: pronScore,
+        score_fluency: Number(geminiEval.score_fluency_coherence ?? rawScores.fc ?? rawScores.fluency ?? 0),
+        score_prosodic: Number(rawScores.prosodic ?? pronScore),
+        score_grammar: geminiEval.score_grammar ?? rawScores.gra ?? rawScores.score_grammar ?? null,
+        score_context: geminiEval.score_context ?? geminiEval.score_fluency_coherence ?? rawScores.fc ?? null,
+        score_lexical: geminiEval.score_lexical ?? rawScores.lr ?? rawScores.score_lexical ?? null,
         audio_url: audioUrl,
         result_json: mergedResultJson,
       };
     },
-    [currentUser.id, gpuUrl, questionSet.exam_type, studentEmb],
+    [currentUser.id, gpuUrl, questionSet.exam_type],
   );
 
   // PRACTICE MODE: Record toggle

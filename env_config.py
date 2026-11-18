@@ -20,7 +20,7 @@ ROOT = Path(__file__).resolve().parent
 DEFAULT_ENV_FILE = ROOT / ".env"
 
 DEFAULT_GEMINI_ENDPOINT = "https://revidapi.com/v1/chat/completions"
-DEFAULT_GEMINI_MODEL = "google/gemini-flash-lite"
+DEFAULT_GEMINI_MODEL = "deepseek-v4.1-flash"
 
 _ENV_LOADED = False
 

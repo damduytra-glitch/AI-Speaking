@@ -7,7 +7,7 @@ export const APP_CONFIG = {
     (process.env.NEXT_PUBLIC_DEFAULT_GEMINI_ENDPOINT || '').trim() ||
     'https://revidapi.com/v1/chat/completions',
   DEFAULT_GEMINI_MODEL:
-    (process.env.NEXT_PUBLIC_DEFAULT_GEMINI_MODEL || '').trim() || 'gemini-3.8-flash',
+    (process.env.NEXT_PUBLIC_DEFAULT_GEMINI_MODEL || '').trim() || 'deepseek-v4.1-flash',
   SPEAKAI_API_URL: (process.env.NEXT_PUBLIC_SPEAKAI_API_URL || '').trim().replace(/\/+$/, ''),
 };
 

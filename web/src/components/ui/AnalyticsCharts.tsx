@@ -870,39 +870,32 @@ export function ClassroomTimelineStrip({
   return (
     <div className="space-y-3 rounded-2xl border border-slate-200 bg-slate-50/75 p-4">
       <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
-        <span className="font-bold text-slate-800">Dòng thời gian lời nói toàn tiết học</span>
+        <span className="font-bold text-slate-800">Language Timeline toàn tiết học (EN / VI)</span>
         <div className="flex flex-wrap items-center gap-3 text-[11px] font-medium text-slate-600">
           <span className="inline-flex items-center gap-1.5">
-            <span className="h-2.5 w-2.5 rounded-sm bg-indigo-500" /> GV Tiếng Anh
+            <span className="h-2.5 w-2.5 rounded-sm bg-sky-500" /> Tiếng Anh (EN)
           </span>
           <span className="inline-flex items-center gap-1.5">
-            <span className="h-2.5 w-2.5 rounded-sm bg-amber-400" /> GV Tiếng Việt
+            <span className="h-2.5 w-2.5 rounded-sm bg-amber-400" /> Tiếng Việt (VI)
           </span>
           <span className="inline-flex items-center gap-1.5">
-            <span className="h-2.5 w-2.5 rounded-sm bg-emerald-500" /> HV Tiếng Anh
-          </span>
-          <span className="inline-flex items-center gap-1.5">
-            <span className="h-2.5 w-2.5 rounded-sm bg-rose-400" /> HV Tiếng Việt
+            <span className="h-2.5 w-2.5 rounded-sm bg-slate-200 border border-slate-300" /> Khoảng lặng
           </span>
         </div>
       </div>
 
-      <div className="relative h-9 w-full overflow-hidden rounded-xl border border-slate-200 bg-slate-200/70">
+      <div className="relative h-10 w-full overflow-hidden rounded-xl border border-slate-200 bg-slate-200/70">
         {segments.map((seg) => {
           const leftPct = Math.max(0, Math.min(100, (Number(seg.start_sec) / safeTotal) * 100));
           const widthPct = Math.max(
-            0.7,
+            0.6,
             Math.min(100 - leftPct, (Number(seg.duration_sec) / safeTotal) * 100),
           );
-          const isTeacher = seg.role === 'teacher';
-          const mainlyVi = Number(seg.vi_percent || 0) >= 50;
-          const bgCls = isTeacher
-            ? mainlyVi
-              ? 'bg-amber-400 hover:bg-amber-500'
-              : 'bg-indigo-500 hover:bg-indigo-600'
-            : mainlyVi
-              ? 'bg-rose-400 hover:bg-rose-500'
-              : 'bg-emerald-500 hover:bg-emerald-600';
+          const isVi =
+            seg.language === 'vi' || (seg.language !== 'en' && Number(seg.vi_percent || 0) >= 50);
+          const bgCls = isVi
+            ? 'bg-amber-400 hover:bg-amber-500'
+            : 'bg-sky-500 hover:bg-sky-600';
           const isActive = selectedSeg?.index === seg.index;
 
           return (
@@ -911,7 +904,7 @@ export function ClassroomTimelineStrip({
               type="button"
               onMouseEnter={() => setSelectedSeg(seg)}
               onClick={() => setSelectedSeg(seg)}
-              title={`${isTeacher ? 'Giáo viên' : 'Học viên'} (${formatTimestamp(seg.start_sec)} - ${formatTimestamp(seg.end_sec)})`}
+              title={`${isVi ? 'Tiếng Việt (VI)' : 'Tiếng Anh (EN)'} (${formatTimestamp(seg.start_sec)} - ${formatTimestamp(seg.end_sec)})`}
               className={`absolute top-0 bottom-0 transition-opacity ${bgCls} ${
                 isActive ? 'ring-2 ring-slate-900 z-10' : 'opacity-90'
               }`}
@@ -929,28 +922,30 @@ export function ClassroomTimelineStrip({
 
       {selectedSeg && (
         <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-xs shadow-sm">
-          <div className="min-w-0 flex-1 space-y-0.5">
+          <div className="min-w-0 flex-1 space-y-1">
             <div className="flex flex-wrap items-center gap-2">
               <span
-                className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${
-                  selectedSeg.role === 'teacher'
-                    ? 'bg-indigo-50 text-indigo-700 border border-indigo-200'
-                    : 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                className={`rounded-full px-2.5 py-0.5 text-[10px] font-bold border ${
+                  selectedSeg.language === 'vi' ||
+                  (selectedSeg.language !== 'en' && Number(selectedSeg.vi_percent || 0) >= 50)
+                    ? 'bg-amber-50 text-amber-700 border-amber-200'
+                    : 'bg-sky-50 text-sky-700 border-sky-200'
                 }`}
               >
-                {selectedSeg.role === 'teacher' ? 'Giáo viên' : 'Học viên'}
+                {selectedSeg.language === 'vi' ||
+                (selectedSeg.language !== 'en' && Number(selectedSeg.vi_percent || 0) >= 50)
+                  ? 'VI · Tiếng Việt'
+                  : 'EN · Tiếng Anh'}
               </span>
               <span className="font-mono text-slate-500">
-                {formatTimestamp(selectedSeg.start_sec)} – {formatTimestamp(selectedSeg.end_sec)}
+                {formatTimestamp(selectedSeg.start_sec)} – {formatTimestamp(selectedSeg.end_sec)} (
+                {Number(selectedSeg.duration_sec || 0).toFixed(1)}s)
               </span>
-              <span className="text-sky-600 font-semibold">
-                EN {Number(selectedSeg.en_percent || 0).toFixed(0)}%
-              </span>
-              <span className="text-amber-600 font-semibold">
-                VI {Number(selectedSeg.vi_percent || 0).toFixed(0)}%
+              <span className="text-slate-500 font-medium">
+                {selectedSeg.word_count ?? selectedSeg.total_words ?? 0} từ
               </span>
             </div>
-            <p className="truncate text-slate-700 italic">&ldquo;{selectedSeg.transcript}&rdquo;</p>
+            <p className="text-slate-700 leading-relaxed">&ldquo;{selectedSeg.transcript}&rdquo;</p>
           </div>
         </div>
       )}

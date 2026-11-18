@@ -105,7 +105,7 @@ def analyze_gra_nlp(text: str, nlp=None, lt=None) -> Dict[str, Any]:
                     num_subordinate += 1
                 elif token.dep_ in ("cc", "conj"):
                     num_coord += 1
-                if token.dep_ in ("nsubj", "nsubjpass", "csubj"):
+                if token.dep_ in ("nsubj", "nsubjpass", "csubj", "expl"):
                     has_subject = True
                 if token.pos_ in ("VERB", "AUX") and token.dep_ in ("ROOT", "conj", "ccomp", "advcl"):
                     has_finite_verb = True
@@ -148,11 +148,6 @@ def analyze_gra_nlp(text: str, nlp=None, lt=None) -> Dict[str, Any]:
         for m in grammar_errors
     )
     has_adj_obj = False
-    if doc:
-        for tok in doc:
-            if tok.dep_ == "dobj" and tok.pos_ == "ADJ":
-                has_adj_obj = True
-                break
 
     if is_spelling:
         base_gra = 8.0
@@ -186,6 +181,7 @@ def analyze_gra_nlp(text: str, nlp=None, lt=None) -> Dict[str, Any]:
         "num_coord": num_coord,
         "errors": grammar_errors,
         "error_count": len(grammar_errors),
+        "has_severe_structural_err": bool(has_missing_head or has_sv_agreement_err),
     }
 
 
@@ -276,85 +272,122 @@ def call_single_llm_assessment(
     endpoint: Optional[str] = None,
     model: Optional[str] = None,
     api_key: Optional[str] = None,
-    timeout: int = 25,
+    timeout: int = 90,
 ) -> Dict[int, Dict[str, float]]:
     """
-    Evaluates GRA and LR for ALL turns in EXACTLY ONE compact LLM API call.
-    Consumes minimal tokens (< 250 tokens total).
-    Returns mapping: {turn_id: {"gra": float, "lr": float}}.
+    Evaluates FC (Coherence & Discourse), LR (Lexical Resource), and GRA (Grammatical Range & Accuracy)
+    for ALL turns in EXACTLY ONE compact LLM API call using deepseek-v4.1-flash.
+    Returns mapping: {turn_id: {"fc": float, "gra": float, "lr": float}}.
     """
-    endpoint = endpoint or get_secret("GEMINI_API_URL") or DEFAULT_GEMINI_ENDPOINT
-    model = model or get_secret("GEMINI_MODEL") or DEFAULT_GEMINI_MODEL
+    endpoint = (
+        endpoint
+        or get_secret("DEFAULT_GEMINI_ENDPOINT")
+        or get_secret("GEMINI_API_URL")
+        or DEFAULT_GEMINI_ENDPOINT
+    )
+    model = (
+        model
+        or get_secret("DEFAULT_GEMINI_MODEL")
+        or get_secret("GEMINI_MODEL")
+        or DEFAULT_GEMINI_MODEL
+    )
     api_key = api_key or get_gemini_api_key() or get_secret("GEMINI_API_KEY")
 
     if not api_key:
         return {}
 
-    # Build ultra-compact prompt
+    # Build lean payload with conversational context (question + answer)
     items = []
     for t in turns:
         t_id = t.get("index", t.get("id", t.get("i", len(items) + 1)))
         txt = str(t.get("transcript") or t.get("text") or t.get("t") or "").strip()
+        q = str(t.get("teacher_prompt") or "").strip()
         if txt:
-            items.append({"i": t_id, "t": txt})
+            row = {"i": int(t_id), "a": txt}
+            if q:
+                row["q"] = q
+            items.append(row)
 
     if not items:
         return {}
 
     system_instruction = (
-        "You are an IELTS Speaking Examiner evaluating short candidate answers.\n"
-        "Score scale: 1.0 to 9.0 in 0.5 steps (e.g. 6.0, 6.5, 7.0, 7.5, 8.0, 8.5).\n"
-        "Guidelines:\n"
-        "- GRA: Basic correct sentence / spelling = 7.5 - 8.0; complex comparative / subordinate clause = 8.0 - 8.5; minor error / fragment = 6.5 - 7.0; severe error = 5.5 - 6.0.\n"
-        "- LR: Everyday conversational vocabulary = 7.0; advanced C1 / precise lexical choice = 7.5 - 8.0; basic / repetitive = 6.0 - 6.5.\n"
-        "Return ONLY a valid JSON list without markdown fences: [{\"i\":<id>,\"gra\":<float>,\"lr\":<float>},...]"
+        "You are an IELTS Speaking Examiner for young ESL learners.\n"
+        "Score each turn (i, q, a) on FC (coherence/flow), LR (vocabulary), GRA (grammar accuracy & range) in 0.5 steps (1.0-9.0).\n"
+        "- FC: coherent direct full-sentence answer or spelling=7.0; extended smooth=7.5; brief pause/self-repair=6.5; "
+        "bare 1-2 word elliptical fragment without verb, omitted head noun, or heavy filler/repetition=5.5-6.0.\n"
+        "- LR: appropriate everyday vocab or letter spelling=7.0; precise/specific less-common word=7.5-8.0; minimal/basic/repetitive/incomplete=6.0-6.5.\n"
+        "- GRA: accurate complex/subordinate clause (no errors)=8.5; accurate complete simple sentence or letter spelling=8.0; "
+        "valid multi-item listing OR minor awkwardness (bare adjective complement after 'favorite <noun> is <adj>', singular subject/verb with compound 'X and Y' complement, or clause restart with filler)=7.0-7.5; "
+        "single clear grammar error (missing article/determiner before singular countable noun, predicate adjective as verb object, incomplete fragment)=6.5; "
+        "severe/structural error (missing head noun in 'my favorite is X', S-V disagreement, plural-singular pronoun mismatch, missing article/plural on singular countable object inside a clause, or bare 1-2 word fragment without verb)=5.5-6.0.\n"
+        "Output ONLY a valid JSON array with no explanation: [{\"i\":1,\"fc\":7.0,\"lr\":7.0,\"gra\":8.0}]"
     )
 
-    prompt_user = json.dumps(items, ensure_ascii=False)
+    prompt_user = json.dumps(items, ensure_ascii=False, separators=(",", ":"))
 
-    try:
-        resp = requests.post(
-            endpoint,
-            headers={
-                "Content-Type": "application/json",
-                "Authorization": f"Bearer {api_key}",
-                "x-api-key": api_key,
-            },
-            json={
-                "model": model,
-                "messages": [
-                    {"role": "system", "content": system_instruction},
-                    {"role": "user", "content": prompt_user},
-                ],
-                "temperature": 0.1,
-                "max_tokens": 512,
-            },
-            timeout=timeout,
-        )
-        if not resp.ok:
-            print(f"[LLM Evaluator] HTTP {resp.status_code}: {resp.text[:120]}")
-            return {}
+    for attempt in range(3):
+        try:
+            resp = requests.post(
+                endpoint,
+                headers={
+                    "Content-Type": "application/json",
+                    "Authorization": f"Bearer {api_key}",
+                    "x-api-key": api_key,
+                },
+                json={
+                    "model": model,
+                    "messages": [
+                        {"role": "system", "content": system_instruction},
+                        {"role": "user", "content": prompt_user},
+                    ],
+                    "temperature": 0.0,
+                    "max_tokens": 8192,
+                },
+                timeout=timeout,
+            )
+            if not resp.ok:
+                print(f"[LLM Evaluator] HTTP {resp.status_code}: {resp.text[:150]}")
+                return {}
 
-        data = resp.json()
-        raw_content = (((data.get("choices") or [{}])[0].get("message") or {}).get("content")) or ""
-        # Clean potential markdown fences ```json ... ```
-        cleaned = re.sub(r"^```[a-zA-Z]*\n?", "", raw_content.strip())
-        cleaned = re.sub(r"\n?```$", "", cleaned).strip()
+            data = resp.json()
+            raw_content = (((data.get("choices") or [{}])[0].get("message") or {}).get("content")) or ""
+            cleaned = re.sub(r"^```[a-zA-Z]*\n?", "", raw_content.strip())
+            cleaned = re.sub(r"\n?```$", "", cleaned).strip()
+            match = re.search(r"\[\s*\{.*\}\s*\]", cleaned, flags=re.DOTALL)
+            json_str = match.group(0) if match else cleaned
 
-        parsed = json.loads(cleaned)
-        out: Dict[int, Dict[str, float]] = {}
-        if isinstance(parsed, list):
-            for row in parsed:
-                idx = row.get("i", row.get("id"))
-                if idx is not None:
-                    out[int(idx)] = {
-                        "gra": round_to_half(float(row.get("gra", 7.0))),
-                        "lr": round_to_half(float(row.get("lr", 7.0))),
-                    }
-        return out
-    except Exception as exc:
-        print(f"[LLM Evaluator] Single-call evaluation note: {exc}")
-        return {}
+            parsed = None
+            try:
+                parsed = json.loads(json_str)
+            except Exception:
+                # Salvage complete JSON objects if response was partially truncated
+                objs = re.findall(r"\{[^{}]+\}", cleaned)
+                salvaged = []
+                for o in objs:
+                    try:
+                        salvaged.append(json.loads(o))
+                    except Exception:
+                        pass
+                if salvaged:
+                    parsed = salvaged
+
+            out: Dict[int, Dict[str, float]] = {}
+            if isinstance(parsed, list):
+                for row in parsed:
+                    idx = row.get("i", row.get("id"))
+                    if idx is not None:
+                        out[int(idx)] = {
+                            "fc": round_to_half(float(row.get("fc", 7.0))),
+                            "gra": round_to_half(float(row.get("gra", 7.0))),
+                            "lr": round_to_half(float(row.get("lr", 7.0))),
+                        }
+            if out:
+                return out
+            print(f"[LLM Evaluator] Attempt {attempt + 1} empty parse ({model}), retrying...")
+        except Exception as exc:
+            print(f"[LLM Evaluator] Attempt {attempt + 1} note ({model}): {exc}")
+    return {}
 
 
 # -------------------------------------------------------------
@@ -370,8 +403,8 @@ def evaluate_conversation_linguistics(
     Holistically processes all turns of a conversation:
     1. LanguageTool + spaCy for GRA
     2. spaCy + wordfreq + NLTK for LR
-    3. Exactly ONE batch LLM call to assess contextual quality
-    4. Custom scoring blending (all rounded to 0.5 band)
+    3. Exactly ONE batch LLM call (deepseek-v4.1-flash) to assess contextual FC/LR/GRA
+    4. Balanced blending with acoustic signals (all rounded to 0.5 band)
     """
     nlp = get_spacy_nlp()
     lt = get_language_tool()
@@ -382,6 +415,15 @@ def evaluate_conversation_linguistics(
     llm_results = call_single_llm_assessment(
         scored_turns, endpoint=endpoint, model=model, api_key=api_key
     )
+
+    # Empirical Bayes speaker-level acoustic pronunciation mean (reduces single-clip frame jitter)
+    p_cont_vals = []
+    for st in scored_turns:
+        sc0 = st.get("scores") or {}
+        pv0 = sc0.get("p_continuous", sc0.get("score_pronunciation", sc0.get("accuracy")))
+        if pv0 is not None:
+            p_cont_vals.append(float(pv0))
+    spk_p_mean = (sum(p_cont_vals) / len(p_cont_vals)) if p_cont_vals else None
 
     for t in turns:
         if not t.get("scored", True) or not t.get("transcript"):
@@ -397,31 +439,45 @@ def evaluate_conversation_linguistics(
         nlp_gra = gra_info["gra"]
         nlp_lr = lr_info["lr"]
 
+        sc = t.setdefault("scores", {})
+        p_raw = float(sc.get("p_continuous", sc.get("score_pronunciation", sc.get("accuracy", 7.0))))
+        if spk_p_mean is not None and len(p_cont_vals) >= 3:
+            p = round_to_half(0.75 * p_raw + 0.25 * spk_p_mean)
+        else:
+            p = round_to_half(p_raw)
+
+        fc_acoustic = float(sc.get("fc_acoustic", sc.get("score_fluency_coherence", sc.get("fluency", 7.0))))
+
         llm_turn = llm_results.get(int(t_id))
         if llm_turn:
-            # 60% LLM contextual weight + 40% rule-based NLP weight
-            final_gra = round_to_half(0.6 * llm_turn["gra"] + 0.4 * nlp_gra)
-            final_lr = round_to_half(0.6 * llm_turn["lr"] + 0.4 * nlp_lr)
+            # Contextual IELTS examiner (deepseek-v4.1-flash) blended with local NLP & acoustic signals
+            final_gra = round_to_half(0.85 * llm_turn["gra"] + 0.15 * nlp_gra)
+            final_lr = round_to_half(0.80 * llm_turn["lr"] + 0.20 * nlp_lr)
+            final_fc = round_to_half(0.65 * llm_turn["fc"] + 0.35 * fc_acoustic)
         else:
             final_gra = nlp_gra
             final_lr = nlp_lr
+            final_fc = round_to_half(fc_acoustic)
+
+        if gra_info.get("has_severe_structural_err"):
+            final_gra = min(final_gra, 6.5)
 
         # Update turn scores
-        sc = t.setdefault("scores", {})
+        sc["score_pronunciation"] = p
+        sc["score_fluency_coherence"] = final_fc
         sc["score_grammar"] = final_gra
         sc["score_lexical"] = final_lr
+        sc["p"] = p
+        sc["fc"] = final_fc
         sc["gra"] = final_gra
         sc["lr"] = final_lr
+        sc["fluency"] = final_fc
+        sc["context"] = final_fc
+        sc["lexical"] = final_lr
+        sc["grammar"] = final_gra
 
         # Recompute overall turn score (unrounded arithmetic mean, 1 decimal)
-        p = round_to_half(float(sc.get("score_pronunciation", sc.get("accuracy", 7.0))))
-        fc = round_to_half(float(sc.get("score_fluency_coherence", sc.get("fluency", 7.0))))
-        sc["score_pronunciation"] = p
-        sc["score_fluency_coherence"] = fc
-        sc["p"] = p
-        sc["fc"] = fc
-
-        ov = round((p + fc + final_lr + final_gra) / 4.0, 1)
+        ov = round((p + final_fc + final_lr + final_gra) / 4.0, 1)
         sc["score_total"] = ov
         sc["overall"] = ov
         sc["total"] = ov

@@ -23,6 +23,7 @@ nltk>=3.8.1
 spacy>=3.7.0
 wordfreq>=3.1.0
 language-tool-python>=3.4.0
+lingua-language-detector>=2.0.0
 
 # --- Speaker Diarization (ERes2Net) & Denoise ---
 huggingface_hub>=0.23.0

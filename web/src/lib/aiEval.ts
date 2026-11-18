@@ -130,36 +130,38 @@ async function callAiProxy({ action, messages, temperature = 0.2, gpuUrlFallback
 }
 
 function buildExaminerSystemPrompt(): string {
-  return `Bạn là Giám khảo Khảo thí Speaking Quốc tế (Chuẩn IELTS / Cambridge). Đánh giá bài nói của học viên chuẩn xác, nghiêm ngặt theo đúng 4 TRỤ CỘT IELTS (PR: 25%, FC: 25%, LR: 25%, GRA: 25%) và trả về DUY NHẤT 1 JSON.
+  return `Bạn là Giám khảo Khảo thí Speaking Quốc tế (Chuẩn IELTS / Cambridge). Đánh giá bài nói của học viên khách quan, công bằng theo đúng 4 TRỤ CỘT IELTS (PR: 25%, FC: 25%, LR: 25%, GRA: 25%) trên thang band 1.0 - 9.0 (bước nhảy 0.5) và trả về DUY NHẤT 1 JSON.
 
-QUY TẮC CHẤM ĐIỂM THEO 4 TRỤ CỘT IELTS / CAMBRIDGE (NGHIÊM NGẶT, KHÔNG CHÂM CHƯỚC):
-1. PR - Pronunciation (score_pronunciation 0-10 - 25%): Đã được đo lường chính xác bằng mô hình âm học SpeechOcean762 + quét âm vị L2-MDD.
-2. FC - Fluency & Coherence / Mạch lạc & Ngữ cảnh (score_fluency_coherence 0-10 - 25% - Gatekeeper):
-   - Đánh giá độ trôi chảy, khả năng hiểu đề, sự ăn khớp và mở rộng ý theo câu hỏi.
-   - Cộc lốc (1-3 từ) hoặc lạc đề: score_fluency_coherence <= 2.5, score_total BẮT BUỘC <= 3.5.
-   - Trả lời 1 câu đơn sơ cấp (chỉ S-V-O cơ bản, chưa mở rộng): score_fluency_coherence tối đa 5.0 - 5.5.
-   - Có phát triển ý với ví dụ/giải thích: 6.5 - 7.5.
-   - Trôi chảy tự nhiên, liên kết chặt chẽ (Band 8+): >= 8.0.
-3. LR - Lexical Resource / Vốn từ vựng (score_lexical 0-10 - 25%):
-   - Câu trả lời sơ cấp (chỉ dùng từ vựng quen thuộc A1-A2, thiếu từ vựng chủ đề): score_lexical <= 5.0.
-   - Từ vựng mức trung cấp (B1-B2), có cụm từ phù hợp ngữ cảnh: 6.0 - 7.0.
-   - Từ vựng phong phú, sử dụng collocations tự nhiên, chính xác (C1-C2): >= 8.0.
-4. GRA - Grammatical Range & Accuracy / Ngữ pháp (score_grammar 0-10 - 25%):
-   - Câu đơn sơ cấp, ngữ pháp cơ bản: tối đa 5.5.
-   - QUY TẮC TRỪ ĐIỂM: MỖI lỗi ngữ pháp (chia thì, to be, số ít/nhiều, giới từ, mạo từ) BẮT BUỘC trừ 1.0 - 1.5 điểm và liệt kê rõ ràng trong grammar_errors.
-   - 1 lỗi ngữ pháp: max 6.5; 2 lỗi: max 5.5; >= 3 lỗi: max 4.5.
-5. Overall Band (score_total 0-10): Tính theo công thức chuẩn IELTS:
-   Overall = (PR * 0.25) + (FC * 0.25) + (LR * 0.25) + (GRA * 0.25) có áp dụng trần Gatekeeper.
-   TUYỆT ĐỐI KHÔNG chấm điểm trên 6.0 cho các câu trả lời ngắn sơ cấp hoặc có từ 2 lỗi ngữ pháp trở lên.
+QUY TẮC CHẤM ĐIỂM THEO 4 TRỤ CỘT IELTS (THANG 1.0 - 9.0, BƯỚC NHẢY 0.5):
+1. PR - Pronunciation (score_pronunciation 1.0-9.0 - 25%): Đã được đo lường bằng mô hình âm học WavLM-Large + SpeechOcean762. BẮT BUỘC giữ nguyên điểm PR hệ thống cung cấp, KHÔNG tự ý thay đổi.
+2. FC - Fluency & Coherence / Mạch lạc & Ngữ cảnh (score_fluency_coherence 1.0-9.0 - 25%):
+   - Trả lời rõ ràng, trực diện, đúng trọng tâm câu hỏi, không ngắt quãng: 7.0.
+   - Phát triển ý mở rộng, mạch lạc, có ví dụ hoặc giải thích tự nhiên: 7.5 - 8.5.
+   - Ngập ngừng nhẹ, câu hơi ngắn hoặc tự sửa lỗi nhỏ: 6.5.
+   - Cụm từ cụt 1-2 từ thiếu động từ, ngắt quãng/lặp từ nhiều: 5.5 - 6.0.
+   - Lạc đề hoàn toàn hoặc vô nghĩa: <= 3.0 (relevance_level = "irrelevant").
+3. LR - Lexical Resource / Vốn từ vựng (score_lexical 1.0-9.0 - 25%):
+   - Từ vựng giao tiếp hằng ngày đúng chủ đề câu hỏi (hoặc đánh vần chuẩn): 7.0.
+   - Từ vựng chính xác, chọn lọc, có collocations hoặc từ ít phổ biến (B2-C1): 7.5 - 8.5.
+   - Từ vựng tối giản, lặp từ hoặc dùng từ chưa chính xác: 6.0 - 6.5.
+4. GRA - Grammatical Range & Accuracy / Ngữ pháp (score_grammar 1.0-9.0 - 25%):
+   - Câu phức/câu ghép/so sánh/mệnh đề phụ chính xác không lỗi: 8.5.
+   - Câu đơn hoàn chỉnh đúng ngữ pháp (hoặc đánh vần chuẩn): 8.0.
+   - Cụm danh từ liệt kê hợp ngữ cảnh, hoặc lấn cấn nhỏ về diễn đạt/số ít-nhiều: 7.0 - 7.5.
+   - Có 1 lỗi ngữ pháp rõ ràng (thiếu mạo từ trước danh từ đếm được số ít, dùng tính từ làm tân ngữ động từ, câu chưa trọn ý): 6.5.
+   - Lỗi cấu trúc nặng hoặc nhiều lỗi (bất đồng chủ-vị, lệch số ít/nhiều đại từ, thiếu danh từ chính, cụm cụt 1-2 từ không động từ): 5.5 - 6.0.
+   - Liệt kê tất cả lỗi ngữ pháp tìm được vào "grammar_errors".
+5. Overall Band (score_total 1.0-9.0): Trung bình cộng tự nhiên 4 trụ cột làm tròn 1 chữ số thập phân:
+   Overall = (PR + FC + LR + GRA) / 4.
 
 OUTPUT JSON FORMAT:
 {
-  "score_total": <float 0-10>,
-  "score_pronunciation": <float 0-10>,
-  "score_fluency_coherence": <float 0-10>,
-  "score_lexical": <float 0-10>,
-  "score_grammar": <float 0-10>,
-  "score_context": <float 0-10>,
+  "score_total": <float 1.0-9.0>,
+  "score_pronunciation": <float 1.0-9.0>,
+  "score_fluency_coherence": <float 1.0-9.0>,
+  "score_lexical": <float 1.0-9.0>,
+  "score_grammar": <float 1.0-9.0>,
+  "score_context": <float 1.0-9.0>,
   "relevance_level": "too_short" | "irrelevant" | "partially_relevant" | "relevant" | "excellent",
   "grammar_errors": [{"error_text": "...", "fix": "...", "explanation": "..."}],
   "feedback_summary": "<Nhận xét sư phạm 1-2 câu tiếng Việt>",
@@ -226,6 +228,13 @@ function clampScore(val: unknown, min = 0, max = 10): number {
   return Math.round(Math.max(min, Math.min(max, num)) * 10) / 10;
 }
 
+function roundToHalf(val: unknown, min = 1.0, max = 9.0): number {
+  const num = Number(val);
+  if (Number.isNaN(num)) return 7.0;
+  const clamped = Math.max(min, Math.min(max, num));
+  return Math.round(clamped * 2) / 2;
+}
+
 export function calibrateTotalScoreWithContext(
   rawTotal: number,
   contextScore: number | null,
@@ -241,27 +250,16 @@ export function calibrateTotalScoreWithContext(
   void lexicalScore;
 
   if (taskType === 'read_aloud') {
-    if (contextScore == null && relevanceLevel !== 'too_short' && relevanceLevel !== 'partially_relevant') {
-      return clampScore(total, 0, 10);
-    }
-    if (relevanceLevel === 'too_short' || (contextScore != null && ctx < 3.0)) {
-      return clampScore(Math.min(total, 3.5), 0, 10);
-    }
-    if ((contextScore != null && ctx < 5.0) || relevanceLevel === 'partially_relevant') {
-      return clampScore(Math.min(total, 5.0), 0, 10);
-    }
-    return clampScore(total, 0, 10);
+    return clampScore(total, 1.0, 9.0);
   }
 
-  if (relevanceLevel === 'irrelevant' || relevanceLevel === 'too_short' || ctx < 3.0) {
+  // Only cap overall score when the answer is genuinely off-topic / irrelevant (< 3.0)
+  if (relevanceLevel === 'irrelevant' || (contextScore != null && ctx < 3.0)) {
     const ceiling = Math.min(3.5, Math.max(1.0, ctx + 0.8));
     if (total > ceiling) total = ceiling;
-  } else if (ctx < 4.5 || relevanceLevel === 'partially_relevant') {
-    const ceiling = Math.min(4.5, Math.max(2.5, ctx + 0.6));
-    if (total > ceiling) total = ceiling;
   }
 
-  return clampScore(total, 0, 10);
+  return clampScore(total, 1.0, 9.0);
 }
 
 function fallbackHeuristicEval({
@@ -275,18 +273,18 @@ function fallbackHeuristicEval({
 }): AiEvalResult {
   const words = transcript.trim().split(/\s+/).filter(Boolean);
   const wordCount = words.length;
-  const rawPron = pronunciationScores.total || 5.0;
-
-  let scoreGrammar = 6.0;
-  let scoreContext = 6.0;
-  let scoreLexical = 6.0;
-  let relevance = 'relevant';
-  let summary = 'Đã đánh giá cơ bản theo tiêu chuẩn khảo thí IELTS.';
+  const rawPron = roundToHalf(
+    pronunciationScores.p ??
+    pronunciationScores.score_pronunciation ??
+    pronunciationScores.accuracy ??
+    pronunciationScores.total ??
+    6.5,
+  );
 
   if (taskType === 'read_aloud') {
     return {
-      score_total: clampScore(rawPron, 0, 10),
-      score_pronunciation: clampScore(rawPron, 0, 10),
+      score_total: rawPron,
+      score_pronunciation: rawPron,
       score_fluency_coherence: null,
       score_lexical: null,
       score_grammar: null,
@@ -299,50 +297,36 @@ function fallbackHeuristicEval({
     };
   }
 
-  if (wordCount <= 3) {
-    scoreGrammar = 3.0;
-    scoreContext = 2.0;
-    scoreLexical = 3.0;
-    relevance = 'too_short';
-    summary = 'Câu trả lời quá ngắn, chưa đủ ý diễn đạt theo yêu cầu của câu hỏi.';
-  } else if (wordCount <= 7) {
-    scoreGrammar = 5.5;
-    scoreContext = 4.5;
-    scoreLexical = 5.0;
-    relevance = 'partially_relevant';
-    summary = 'Bạn trả lời được một phần nhưng câu còn ngắn, nên mở rộng thêm chi tiết.';
-  } else if (taskType === 'long_turn' && wordCount < 30) {
-    scoreGrammar = Math.min(6.5, Math.max(4.5, rawPron * 0.75));
-    scoreContext = 4.5;
-    scoreLexical = 5.0;
-    relevance = 'partially_relevant';
-    summary = 'Dạng Cue Card / Long Turn yêu cầu bài nói dài và bao quát các ý gợi ý. Bạn nên phát triển thêm chi tiết.';
-  } else {
-    scoreGrammar = Math.min(7.0, Math.max(4.5, rawPron * 0.8));
-    scoreContext = Math.min(7.0, Math.max(4.5, rawPron * 0.82));
-    scoreLexical = Math.min(6.5, Math.max(4.5, rawPron * 0.78));
-    relevance = 'relevant';
-    summary = 'Câu trả lời đầy đủ ý, cấu trúc ngữ pháp và từ vựng ở mức cơ bản.';
-  }
+  // Prefer calibrated 4-pillar scores already computed by the Python backend (WavLM + Local NLP + DeepSeek)
+  const hasBackend4Pillars =
+    pronunciationScores.fc != null &&
+    pronunciationScores.lr != null &&
+    pronunciationScores.gra != null;
 
-  const rawWeightedTotal =
-    rawPron * 0.25 + scoreContext * 0.25 + scoreLexical * 0.25 + scoreGrammar * 0.25;
-  const scoreTotal = calibrateTotalScoreWithContext(
-    rawWeightedTotal,
-    scoreContext,
-    scoreGrammar,
-    scoreLexical,
-    relevance,
-    taskType,
-  );
+  const scoreContext = hasBackend4Pillars
+    ? roundToHalf(pronunciationScores.fc)
+    : roundToHalf(pronunciationScores.fluency ?? (wordCount <= 2 ? 6.0 : 7.0));
+  const scoreLexical = hasBackend4Pillars
+    ? roundToHalf(pronunciationScores.lr)
+    : roundToHalf(wordCount <= 2 ? 6.5 : 7.0);
+  const scoreGrammar = hasBackend4Pillars
+    ? roundToHalf(pronunciationScores.gra)
+    : roundToHalf(wordCount <= 2 ? 6.5 : 7.0);
+
+  const scoreTotal = clampScore((rawPron + scoreContext + scoreLexical + scoreGrammar) / 4, 1.0, 9.0);
+  const relevance = wordCount <= 2 ? 'partially_relevant' : 'relevant';
+  const summary =
+    wordCount <= 2
+      ? 'Câu trả lời còn ngắn, bạn nên mở rộng thành câu hoàn chỉnh.'
+      : 'Đã đánh giá theo 4 tiêu chuẩn khảo thí IELTS (Phát âm, Mạch lạc, Từ vựng, Ngữ pháp).';
 
   return {
     score_total: scoreTotal,
-    score_pronunciation: clampScore(rawPron, 0, 10),
-    score_fluency_coherence: clampScore(scoreContext, 0, 10),
-    score_lexical: clampScore(scoreLexical, 0, 10),
-    score_grammar: clampScore(scoreGrammar, 0, 10),
-    score_context: clampScore(scoreContext, 0, 10),
+    score_pronunciation: rawPron,
+    score_fluency_coherence: scoreContext,
+    score_lexical: scoreLexical,
+    score_grammar: scoreGrammar,
+    score_context: scoreContext,
     relevance_level: relevance,
     grammar_errors: [],
     feedback_summary: summary,
@@ -374,13 +358,16 @@ export async function evaluateAnswerWithGemini({
 }): Promise<AiEvalResult> {
   const runtime = await syncGeminiConfigFromSupabase();
   const cleanTranscript = (transcript || '').trim();
-  const acc = Number(pronunciationScores.accuracy) || 0;
-  const flu = Number(pronunciationScores.fluency) || 0;
-  const pro = Number(pronunciationScores.prosodic) || 0;
-  const rawPronTotal =
-    pronunciationScores.total != null && !Number.isNaN(Number(pronunciationScores.total))
-      ? Number(pronunciationScores.total)
-      : 0;
+  const acc = Number(pronunciationScores.p ?? pronunciationScores.score_pronunciation ?? pronunciationScores.accuracy) || 0;
+  const flu = Number(pronunciationScores.fc ?? pronunciationScores.fluency) || 0;
+  const pro = Number(pronunciationScores.prosodic) || acc;
+  const rawPronTotal = roundToHalf(
+    pronunciationScores.p ??
+    pronunciationScores.score_pronunciation ??
+    pronunciationScores.accuracy ??
+    pronunciationScores.total ??
+    0,
+  );
 
   if (!cleanTranscript) {
     return {
@@ -412,9 +399,9 @@ Phát âm âm học (SpeechOcean): Điểm tổng=${rawPronTotal.toFixed(1)}/10 
 
   const userMessageContent = isPictureTask
     ? [
-        { type: 'text', text: userContentText },
-        { type: 'image_url', image_url: { url: imageUrl } },
-      ]
+      { type: 'text', text: userContentText },
+      { type: 'image_url', image_url: { url: imageUrl } },
+    ]
     : userContentText;
 
   try {
@@ -444,13 +431,32 @@ Phát âm âm học (SpeechOcean): Điểm tổng=${rawPronTotal.toFixed(1)}/10 
       }
     }
 
-    const scoreGrammar = taskType === 'read_aloud' ? null : clampScore(parsed.score_grammar, 0, 10);
-    const scoreContext =
+    const llmGrammar = taskType === 'read_aloud' ? null : roundToHalf(parsed.score_grammar, 1.0, 9.0);
+    const llmContext =
       taskType === 'read_aloud'
         ? null
-        : clampScore(parsed.score_context ?? parsed.score_fluency_coherence, 0, 10);
-    const scoreLexical =
-      taskType === 'read_aloud' ? null : clampScore(parsed.score_lexical ?? parsed.score_grammar, 0, 10);
+        : roundToHalf(parsed.score_context ?? parsed.score_fluency_coherence, 1.0, 9.0);
+    const llmLexical =
+      taskType === 'read_aloud' ? null : roundToHalf(parsed.score_lexical ?? parsed.score_grammar, 1.0, 9.0);
+
+    // Unify with Python backend's calibrated 4-pillar pipeline (WavLM + SpeechOcean762 + Local NLP + DeepSeek):
+    // - Preserve acoustic fluency contribution on FC (65% LLM coherence + 35% backend acoustic fluency)
+    // - Keep 0.5 band steps on all 4 criteria, pure arithmetic mean rounded to 1 decimal for Overall
+    const backendFc =
+      pronunciationScores.fc != null && !Number.isNaN(Number(pronunciationScores.fc))
+        ? Number(pronunciationScores.fc)
+        : flu > 0
+          ? flu
+          : null;
+
+    const scoreGrammar = llmGrammar;
+    const scoreContext =
+      taskType === 'read_aloud' || llmContext == null
+        ? null
+        : !isPictureTask && backendFc != null && backendFc >= 1.0
+          ? roundToHalf(0.65 * llmContext + 0.35 * backendFc, 1.0, 9.0)
+          : llmContext;
+    const scoreLexical = llmLexical;
     const relevanceLevel =
       taskType === 'read_aloud'
         ? 'relevant'
@@ -458,7 +464,7 @@ Phát âm âm học (SpeechOcean): Điểm tổng=${rawPronTotal.toFixed(1)}/10 
 
     let scoreTotal: number;
     if (taskType === 'read_aloud') {
-      scoreTotal = clampScore(rawPronTotal, 0, 10);
+      scoreTotal = rawPronTotal;
     } else {
       const rawWeightedTotal =
         rawPronTotal * 0.25 +
@@ -495,7 +501,7 @@ Phát âm âm học (SpeechOcean): Điểm tổng=${rawPronTotal.toFixed(1)}/10 
   } catch (err) {
     const fb = fallbackHeuristicEval({
       transcript: cleanTranscript,
-      pronunciationScores: { accuracy: acc, fluency: flu, prosodic: pro, total: rawPronTotal },
+      pronunciationScores: { ...pronunciationScores, accuracy: acc, fluency: flu, prosodic: pro, total: rawPronTotal },
       taskType,
     });
     fb.is_fallback = true;
@@ -548,26 +554,13 @@ function fallbackConversationHeuristic({
   studentFullText: string;
   pronunciationScores: Partial<PronunciationScores>;
 }): AiEvalResult {
-  const words = studentFullText.trim().split(/\s+/).filter(Boolean);
-  const totalWords = words.length;
-  const turnCount = studentTurns.length || 1;
-  const avgWordsPerTurn = totalWords / turnCount;
-  const uniqueVocab = new Set(words.map((w) => w.toLowerCase())).size;
-  void avgWordsPerTurn;
-  void uniqueVocab;
-
-  const rawPron = Number(pronunciationScores.accuracy ?? pronunciationScores.total ?? 7.0);
-  const rawFlu = Number(pronunciationScores.fluency ?? 7.5);
-  void rawFlu;
-
-  // Calibrated regression formulas derived directly from human teacher benchmark dataset (MAE < 0.09 band)
-  let fc = Math.round((0.1890 * rawPron + 5.5574) * 10) / 10;
-  let lr = Math.round((0.2162 * rawPron + 5.4123) * 10) / 10;
-  let gra = Math.round((0.6774 * rawPron + 2.4684) * 10) / 10;
-
-  fc = Math.max(1.0, Math.min(9.0, fc));
-  lr = Math.max(1.0, Math.min(9.0, lr));
-  gra = Math.max(1.0, Math.min(9.0, gra));
+  void studentTurns;
+  const rawPron = roundToHalf(
+    pronunciationScores.p ?? pronunciationScores.accuracy ?? pronunciationScores.total ?? 7.0,
+  );
+  const fc = roundToHalf(pronunciationScores.fc ?? pronunciationScores.fluency ?? rawPron);
+  const lr = roundToHalf(pronunciationScores.lr ?? pronunciationScores.lexical ?? rawPron);
+  const gra = roundToHalf(pronunciationScores.gra ?? pronunciationScores.grammar ?? rawPron);
 
   const total = Math.round(((rawPron + fc + lr + gra) / 4.0) * 10) / 10;
   const summary = 'Học viên tương tác tự nhiên, phát âm rõ ràng và phản xạ tích cực với giáo viên trong toàn bộ buổi học.';
@@ -631,13 +624,15 @@ export async function evaluateConversationWithAi({
   gpuUrlFallback?: string;
 }): Promise<AiEvalResult> {
   const runtime = await syncGeminiConfigFromSupabase();
-  const acc = Number(pronunciationScores.accuracy) || 0;
-  const flu = Number(pronunciationScores.fluency) || 0;
-  const pro = Number(pronunciationScores.prosodic) || 0;
+  const acc = Number(pronunciationScores.p ?? pronunciationScores.accuracy) || 0;
+  const flu = Number(pronunciationScores.fc ?? pronunciationScores.fluency) || 0;
+  const pro = Number(pronunciationScores.prosodic ?? acc) || 0;
   const rawPronTotal =
-    pronunciationScores.total != null && !Number.isNaN(Number(pronunciationScores.total))
-      ? Number(pronunciationScores.total)
-      : 0;
+    pronunciationScores.p != null && !Number.isNaN(Number(pronunciationScores.p))
+      ? Number(pronunciationScores.p)
+      : pronunciationScores.total != null && !Number.isNaN(Number(pronunciationScores.total))
+        ? Number(pronunciationScores.total)
+        : 0;
 
   const studentTurns = dialogueTurns.filter((t) => t.role === 'student' || t.speaker === 'Student');
   const studentFullText = studentTurns.map((t) => t.transcript || '').join(' ').trim();

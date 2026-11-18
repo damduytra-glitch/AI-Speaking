@@ -284,8 +284,48 @@ class DiarizeAndTranscribePipeline:
                 "language": "vi" if is_vi else detected_lang,
             })
 
-        # ── 3. Conversational Turn Merging (Pure Acoustic Continuity) ──
+        # ── 3. Conversational Turn Merging (Acoustic Continuity + Syntactic Incompleteness) ──
         print("[Stage 1] Applying conversational turn merging...", flush=True)
+        INCOMPLETE_END_WORDS = {
+            "is", "are", "was", "were", "am", "and", "or", "because", "like",
+            "my", "the", "a", "an", "to", "in", "for", "of", "with",
+        }
+        DEPENDENT_START_WORDS = {"in", "at", "on", "with", "for", "of", "to", "and", "or", "because"}
+        QUESTION_CUES = {"what", "who", "how", "why", "where", "when", "which", "spell", "tell"}
+        FINITE_VERBS = {
+            "is", "are", "was", "were", "am", "have", "has", "do", "does",
+            "can", "like", "likes", "eat", "live", "want", "love",
+        }
+
+        def _ends_incomplete(tr: str) -> bool:
+            s = (tr or "").strip()
+            if not s:
+                return False
+            if s.endswith("..."):
+                return True
+            ws = [w.lower() for w in re.sub(r"[^\w\s']", " ", s).split() if w.strip()]
+            if not ws or all(len(w) == 1 for w in ws):
+                return False
+            return ws[-1] in INCOMPLETE_END_WORDS
+
+        def _is_dependent_continuation(tr: str) -> bool:
+            ws = [w.lower() for w in re.sub(r"[^\w\s']", " ", (tr or "")).split() if w.strip()]
+            if not ws or len(ws) > 4:
+                return False
+            return ws[0] in DEPENDENT_START_WORDS and not any(w in FINITE_VERBS for w in ws)
+
+        def _intervening_is_new_question(end_t: float, start_t: float) -> bool:
+            between = [
+                t for t in teacher_turns
+                if t.get("start_sec", 0.0) >= end_t - 0.15 and t.get("end_sec", 0.0) <= start_t + 0.15
+            ]
+            for bt in between:
+                btxt = (bt.get("transcript") or "").strip()
+                bws = [w.lower() for w in re.sub(r"[^\w\s']", " ", btxt).split() if w.strip()]
+                if "?" in btxt or any(w in QUESTION_CUES for w in bws) or len(bws) >= 4:
+                    return True
+            return False
+
         accepted_labels = {"student", "speaker b"}
         merged_turns: List[Dict[str, Any]] = []
         i = 0
@@ -304,8 +344,18 @@ class DiarizeAndTranscribePipeline:
                     max_cue_duration=0.3,
                 )
 
-                # Pure acoustic merge: merge consecutive student utterances within short pause (<= 2.5s) without intervening teacher prompt
-                should_merge = (0 <= gap <= 2.5) and not other_spoke_full_turn
+                # Case A: Pure acoustic continuity (short pause <= 2.5s, no intervening teacher turn)
+                acoustic_merge = (0 <= gap <= 2.5) and not other_spoke_full_turn
+
+                # Case B: Syntactic incompleteness across a brief teacher scaffolding cue / encouragement
+                # (curr ends on dangling verb/conjunction OR nxt is a dependent phrase without a new question)
+                syntactic_merge = (
+                    (0 <= gap <= 3.0)
+                    and not _intervening_is_new_question(curr["end_sec"], nxt["start_sec"])
+                    and (_ends_incomplete(curr.get("transcript", "")) or _is_dependent_continuation(nxt.get("transcript", "")))
+                )
+
+                should_merge = acoustic_merge or syntactic_merge
 
                 if should_merge:
                     try:

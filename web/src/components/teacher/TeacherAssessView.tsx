@@ -218,7 +218,6 @@ export function TeacherAssessView({
       formData.append('teacher_embeddings_json', JSON.stringify(teacherEmb));
       formData.append('student_embeddings_json', JSON.stringify(studentEmb));
       formData.append('score_teacher', scoreTeacher ? 'true' : 'false');
-      formData.append('diarize', 'true');
 
       const cleanApi = gpuUrl.trim().replace(/\/+$/, '');
       const startRes = await fetch(`${cleanApi}/assess_start`, {
@@ -331,12 +330,12 @@ export function TeacherAssessView({
       await saveAssessment(draftId, {
         title: customTitle.trim() || `Hội thoại với ${selectedStudent?.full_name || 'Học viên'}`,
         score_total: Number(aiEval.score_total ?? sScores.total ?? 0),
-        score_accuracy: Number(sScores.accuracy ?? sScores.total ?? 0),
-        score_fluency: Number(sScores.fluency ?? 0),
-        score_prosodic: Number(sScores.prosodic ?? 0),
-        score_grammar: aiEval.score_grammar ?? null,
-        score_context: aiEval.score_context ?? aiEval.score_fluency_coherence ?? null,
-        score_lexical: aiEval.score_lexical ?? null,
+        score_accuracy: Number(sScores.p ?? sScores.accuracy ?? sScores.total ?? 0),
+        score_fluency: Number(sScores.fc ?? sScores.fluency ?? 0),
+        score_prosodic: Number(sScores.prosodic ?? sScores.p ?? sScores.accuracy ?? 0),
+        score_grammar: aiEval.score_grammar ?? sScores.gra ?? null,
+        score_context: aiEval.score_context ?? aiEval.score_fluency_coherence ?? sScores.fc ?? null,
+        score_lexical: aiEval.score_lexical ?? sScores.lr ?? null,
         llm_feedback: aiEval.conversation_summary || null,
         result_json: clonedResult,
       });
@@ -374,27 +373,40 @@ export function TeacherAssessView({
 
   const activeScores = useMemo(() => {
     if (!analysisResult) return null;
-    if (speakerView === 'teacher' && analysisResult.teacher?.sentences) {
-      const scored = analysisResult.teacher.sentences.filter((s) => s.scores?.total != null);
-      if (scored.length === 0) return { total: 0, pr: 0, fc: null, lr: null, gra: null };
-      const avg = (fn: (s: NonNullable<(typeof scored)[number]['scores']>) => number) =>
-        scored.reduce((a, b) => a + fn(b.scores!), 0) / scored.length;
-      return {
-        total: avg((s) => s.total || 0),
-        pr: avg((s) => s.accuracy || 0),
-        fc: null as number | null,
-        lr: null as number | null,
-        gra: null as number | null,
-      };
+    if (speakerView === 'teacher') {
+      const tScores = analysisResult.teacher?.scores;
+      if (tScores && (tScores.total != null || tScores.p != null || tScores.accuracy != null)) {
+        return {
+          total: Number(tScores.total ?? 0),
+          pr: Number(tScores.p ?? tScores.accuracy ?? tScores.total ?? 0),
+          fc: tScores.fc ?? null,
+          lr: tScores.lr ?? null,
+          gra: tScores.gra ?? null,
+        };
+      }
+      if (analysisResult.teacher?.sentences) {
+        const scored = analysisResult.teacher.sentences.filter((s) => s.scores?.total != null);
+        if (scored.length === 0) return { total: 0, pr: 0, fc: null, lr: null, gra: null };
+        const avg = (fn: (s: NonNullable<(typeof scored)[number]['scores']>) => number) =>
+          scored.reduce((a, b) => a + fn(b.scores!), 0) / scored.length;
+        return {
+          total: avg((s) => s.total || 0),
+          pr: avg((s) => s.p ?? s.accuracy ?? 0),
+          fc: null as number | null,
+          lr: null as number | null,
+          gra: null as number | null,
+        };
+      }
+      return { total: 0, pr: 0, fc: null, lr: null, gra: null };
     }
 
     const sScores = analysisResult.student?.scores;
     return {
       total: Number(aiEval?.score_total ?? sScores?.overall ?? sScores?.total ?? 0),
-      pr: Number(sScores?.accuracy ?? sScores?.total ?? 0),
-      fc: aiEval?.score_fluency_coherence ?? aiEval?.score_context ?? sScores?.context ?? null,
-      lr: aiEval?.score_lexical ?? sScores?.lexical ?? null,
-      gra: aiEval?.score_grammar ?? sScores?.grammar ?? null,
+      pr: Number(sScores?.p ?? sScores?.accuracy ?? sScores?.total ?? 0),
+      fc: aiEval?.score_fluency_coherence ?? aiEval?.score_context ?? sScores?.fc ?? sScores?.context ?? null,
+      lr: aiEval?.score_lexical ?? sScores?.lr ?? sScores?.lexical ?? null,
+      gra: aiEval?.score_grammar ?? sScores?.gra ?? sScores?.grammar ?? null,
     };
   }, [analysisResult, aiEval, speakerView]);
 

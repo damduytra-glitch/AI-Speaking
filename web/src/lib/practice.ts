@@ -741,21 +741,16 @@ export async function detectVoiceActivity(
 export async function assessSingleAnswer(
   apiUrl: string,
   audioBlob: Blob,
-  studentEmbeddings: number[] | number[][] | null,
   options: { taskType?: string; referenceText?: string } = {},
 ): Promise<AssessmentResultJson> {
   const formData = new FormData();
   formData.append('audio', audioBlob, 'practice_answer.webm');
-  formData.append('teacher_embeddings_json', JSON.stringify(studentEmbeddings || []));
-  formData.append('student_embeddings_json', JSON.stringify(studentEmbeddings || []));
-  formData.append('score_teacher', 'false');
-  formData.append('diarize', 'false');
   if (options.taskType) formData.append('task_type', options.taskType);
   if (options.referenceText) formData.append('reference_text', options.referenceText);
 
   const cleanApi = apiUrl.trim().replace(/\/+$/, '');
   const authHeaders = await getAuthHeaders();
-  const startRes = await fetch(`${cleanApi}/assess_start`, {
+  const startRes = await fetch(`${cleanApi}/assess_practice`, {
     method: 'POST',
     headers: authHeaders,
     body: formData,

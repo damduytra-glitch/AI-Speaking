@@ -1,4 +1,4 @@
-"""Standalone CLI for Classroom EN/VI Language Ratio Analysis."""
+"""Standalone CLI for Diarization-Free Classroom EN/VI Language Timeline Analysis."""
 
 from __future__ import annotations
 
@@ -11,53 +11,30 @@ from classroom_lang.analyzer import ClassroomAnalysisConfig, ClassroomLanguageAn
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Analyze Teacher vs Student % Vietnamese / % English in a full classroom recording."
+        description="Analyze EN/VI Language Timeline in a classroom recording (Whisper Word Timestamps + Lingua)."
     )
     parser.add_argument("--audio", required=True, help="Path to full classroom audio file.")
-    group = parser.add_mutually_exclusive_group(required=True)
-    group.add_argument(
-        "--teacher-embedding",
-        help="Path to JSON file containing teacher voice_embeddings array.",
-    )
-    group.add_argument(
-        "--teacher-audio",
-        help="Path to clean reference WAV/MP3 of the teacher voice.",
-    )
-    parser.add_argument("--threshold", type=float, default=0.40, help="Teacher cosine similarity threshold (default: 0.40).")
-    parser.add_argument("--vad-db", type=float, default=-40.0, help="VAD floor threshold in dBFS (default: -40.0).")
     parser.add_argument("--device", default=None, help="Device override (e.g. cuda:0 or cpu).")
+    parser.add_argument("--max-gap", type=float, default=1.5, help="Max silence gap (sec) to merge same-language words.")
     parser.add_argument("--out", default=None, help="Optional output JSON report path.")
     args = parser.parse_args()
 
     analyzer = ClassroomLanguageAnalyzer(
         device=args.device,
-        config=ClassroomAnalysisConfig(
-            teacher_threshold=args.threshold,
-            vad_threshold_db=args.vad_db,
-        ),
+        config=ClassroomAnalysisConfig(group_max_gap_sec=args.max_gap),
     )
-
-    if args.teacher_embedding:
-        raw = json.loads(Path(args.teacher_embedding).read_text(encoding="utf-8"))
-        teacher_emb = raw.get("voice_embeddings", raw) if isinstance(raw, dict) else raw
-    else:
-        teacher_emb = analyzer.extract_teacher_embedding(args.teacher_audio)
 
     report = analyzer.analyze(
         args.audio,
-        teacher_emb,
-        teacher_threshold=args.threshold,
-        vad_threshold_db=args.vad_db,
         progress_callback=lambda msg: print(f"[Classroom] {msg}", flush=True),
     )
 
-    t = report["teacher"]
-    s = report["student"]
+    ov = report["overall"]
     d = report["duration"]
     print("\n" + "=" * 72)
-    print(f"Tổng thời lượng: {d['total_audio_sec']}s | Vùng nói: {d['total_speech_sec']}s | Im lặng loại bỏ: {d['silence_sec']}s")
-    print(f"Giáo viên (Teacher): VI {t['vi_percent']}% ({t['vi_words']} từ) | EN {t['en_percent']}% ({t['en_words']} từ) | Nói {t['speech_sec']}s")
-    print(f"Học viên  (Student): VI {s['vi_percent']}% ({s['vi_words']} từ) | EN {s['en_percent']}% ({s['en_words']} từ) | Nói {s['speech_sec']}s")
+    print(f"Tổng thời lượng: {d['total_audio_sec']}s | Lời nói: {d['total_speech_sec']}s | Im lặng: {d['silence_sec']}s")
+    print(f"EN: {ov['en_percent']}% ({ov['en_words']} từ, {d['en_speech_sec']}s) | VI: {ov['vi_percent']}% ({ov['vi_words']} từ, {d['vi_speech_sec']}s)")
+    print(f"Language Timeline segments: {len(report['timeline'])}")
     print("=" * 72 + "\n")
 
     if args.out:
@@ -69,4 +46,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

@@ -1,7 +1,7 @@
 import { getServerEnv } from './env';
 
 const DEFAULT_ENDPOINT = 'https://revidapi.com/v1/chat/completions';
-const DEFAULT_MODEL = 'gemini-3.8-flash';
+const DEFAULT_MODEL = 'deepseek-v4.1-flash';
 
 export type FetchLike = typeof fetch;
 
@@ -292,8 +292,9 @@ export async function handleAiEvalRequest(req: Request, deps: AiEvalDependencies
         model: defaultModel,
         messages: safeMessages,
         temperature,
+        max_tokens: 8192,
       }),
-      signal: AbortSignal.timeout(30000),
+      signal: AbortSignal.timeout(90000),
     });
 
     if (!upstreamRes.ok) {

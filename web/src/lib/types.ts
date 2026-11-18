@@ -176,6 +176,9 @@ export interface AssessmentResultJson {
     }>;
   };
   teacher?: {
+    transcript?: string;
+    scored?: boolean;
+    scores?: PronunciationScores;
     full_audio?: string;
     sentences?: Array<{
       transcript?: string;
@@ -284,29 +287,15 @@ export interface PracticeSession {
   answers?: PracticeAnswerRecord[];
 }
 
-export interface ClassroomRoleStats {
-  en_percent: number;
-  vi_percent: number;
-  en_words: number;
-  vi_words: number;
-  total_words: number;
-  speech_sec: number;
-  turn_count: number;
-}
-
 export interface ClassroomSegment {
   index: number;
   start_sec: number;
   end_sec: number;
   duration_sec: number;
-  role: 'teacher' | 'student' | string;
-  teacher_similarity?: number | null;
-  whisper_lang?: string | null;
-  en_words: number;
-  vi_words: number;
-  total_words: number;
-  en_percent: number;
-  vi_percent: number;
+  language: 'en' | 'vi' | string;
+  word_count?: number;
+  total_words?: number;
+  vi_percent?: number;
   transcript: string;
 }
 
@@ -314,16 +303,21 @@ export interface ClassroomAnalysisResult {
   duration?: {
     total_audio_sec?: number;
     total_speech_sec?: number;
+    en_speech_sec?: number;
+    vi_speech_sec?: number;
     silence_sec?: number;
     speech_ratio_percent?: number;
   };
   overall?: {
     en_percent?: number;
     vi_percent?: number;
+    en_time_percent?: number;
+    vi_time_percent?: number;
+    en_words?: number;
+    vi_words?: number;
+    total_words?: number;
   };
-  teacher?: ClassroomRoleStats;
-  student?: ClassroomRoleStats;
-  segments?: ClassroomSegment[];
+  timeline?: ClassroomSegment[];
 }
 
 export interface GpuHealthData {

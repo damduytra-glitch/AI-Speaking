@@ -168,6 +168,7 @@ class CutTurnScorer:
             "context": ielts_turn["score_fluency_coherence"],
             "lexical": ielts_turn["score_lexical"],
             "grammar": ielts_turn["score_grammar"],
+            "fc_acoustic": ielts_turn.get("fc_acoustic", ielts_turn["fc"]),
             "p": ielts_turn["p"],
             "fc": ielts_turn["fc"],
             "lr": ielts_turn["lr"],
