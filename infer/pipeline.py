@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import argparse
+from concurrent.futures import ThreadPoolExecutor
 import json
 import re
 import sys
+import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
 
@@ -786,6 +788,7 @@ class SpeakingPipeline:
         role: Optional[str] = None,
         teacher_sentences: Optional[List[Dict[str, Any]]] = None,
     ) -> Dict[str, Any]:
+        t_role_start = time.perf_counter()
         fb = self.enable_feedback if feedback is None else feedback
         if not score:
             fb = False
@@ -796,6 +799,7 @@ class SpeakingPipeline:
             source_audio=source_audio,
             diarize_segments=diarize_segments,
         )
+        t_clip = time.perf_counter() - t_role_start
 
         if not segments:
             print(f"[{role}] Không tách được lượt nói nào từ audio", flush=True)
@@ -821,6 +825,7 @@ class SpeakingPipeline:
             }
 
         # ── Step 1: ASR Transcription Only (matching diarize_and_transcribe.py) ──
+        t_asr_start = time.perf_counter()
         candidates: List[Dict[str, Any]] = []
         filtered_vi = 0
         is_student = str(role).lower() == "student"
@@ -872,6 +877,8 @@ class SpeakingPipeline:
                 "language": "vi" if is_vi else detected_lang,
             })
 
+        t_asr = time.perf_counter() - t_asr_start
+
         if not candidates:
             print(f"[{role}] Không có lượt nói hợp lệ sau ASR ({len(segments)} turn)", flush=True)
             return {
@@ -885,6 +892,7 @@ class SpeakingPipeline:
             }
 
         # ── Step 2: Conversational Turn Merging (100% synced with diarize_and_transcribe.py) ──
+        t_merge_start = time.perf_counter()
         if is_student and len(candidates) >= 2:
             from data.audio_preprocess import load_waveform, save_audio_file, PreprocessConfig
 
@@ -994,6 +1002,8 @@ class SpeakingPipeline:
                 i += 1
             candidates = merged_candidates
 
+        t_merge = time.perf_counter() - t_merge_start
+
         # ── Step 3: Attach Preceding Teacher Prompt Context ──
         if teacher_sentences and candidates:
             for cand in candidates:
@@ -1006,6 +1016,7 @@ class SpeakingPipeline:
                     cand["teacher_prompt"] = prec[-1].get("transcript", "")
 
         # ── Step 4: ASR Error Correction BEFORE Acoustic Scoring (Single Pass!) ──
+        t_asr_corr_start = time.perf_counter()
         if is_student and candidates and self.config.get("asr_correction", {}).get("enabled", True):
             try:
                 corrector = AsrErrorCorrector(enable_llm=True)
@@ -1025,9 +1036,35 @@ class SpeakingPipeline:
                         cand["transcript"] = new_tr
             except Exception as asr_corr_err:
                 print(f"[{role}] AsrErrorCorrector notice: {asr_corr_err}")
+        t_asr_corr = time.perf_counter() - t_asr_corr_start
 
-        # ── Step 5: Single-Pass Eligibility + WavLM SpeechOcean762 + L2-MDD Scoring ──
+        # ── Step 5 + 6 (Parallelized): Run DeepSeek v4.1 Flash LLM batch concurrently with GPU WavLM+L2-MDD ──
         elig_cfg = self.config.get("eligibility") or {}
+        llm_future = None
+        llm_pool = None
+        if score and candidates:
+            eligible_for_llm: List[Dict[str, Any]] = []
+            for cand in candidates:
+                tr = cand.get("transcript", "").strip()
+                if self._lang_id_cfg.get("enabled", False) and cand.get("is_vietnamese", False):
+                    continue
+                ok_el, _ = check_scoring_eligibility(tr, cand.get("duration_sec", 0.0), config=elig_cfg)
+                if ok_el and tr:
+                    eligible_for_llm.append({
+                        "index": cand["index"],
+                        "transcript": tr,
+                        "teacher_prompt": cand.get("teacher_prompt"),
+                        "scored": True,
+                    })
+            if eligible_for_llm:
+                try:
+                    from infer.hybrid_nlp_scorer import call_single_llm_assessment
+                    llm_pool = ThreadPoolExecutor(max_workers=1)
+                    llm_future = llm_pool.submit(call_single_llm_assessment, eligible_for_llm)
+                except Exception as llm_spawn_err:
+                    print(f"[{role}] Parallel LLM spawn notice: {llm_spawn_err}", flush=True)
+
+        t_gpu_start = time.perf_counter()
         sentences: List[Dict[str, Any]] = []
         for cand in candidates:
             seg_info = {
@@ -1094,14 +1131,35 @@ class SpeakingPipeline:
                 if t_prompt:
                     u["teacher_prompt"] = t_prompt
                 sentences.append(u)
+        t_gpu = time.perf_counter() - t_gpu_start
 
-        # ── Step 6: Holistic FC/LR/GRA Evaluation via DeepSeek v4.1 Flash + Local NLP ──
+        # ── Step 6: Holistic FC/LR/GRA Evaluation (collect overlapped LLM + Local NLP) ──
+        t_nlp_start = time.perf_counter()
+        precomputed_llm = None
+        if llm_future is not None:
+            try:
+                precomputed_llm = llm_future.result()
+            except Exception as llm_res_err:
+                print(f"[{role}] Parallel LLM result notice: {llm_res_err}", flush=True)
+            finally:
+                if llm_pool is not None:
+                    llm_pool.shutdown(wait=False)
+
         if score and sentences:
             try:
                 from infer.hybrid_nlp_scorer import evaluate_conversation_linguistics
-                sentences = evaluate_conversation_linguistics(sentences)
+                sentences = evaluate_conversation_linguistics(
+                    sentences, precomputed_llm_results=precomputed_llm
+                )
             except Exception as he:
                 print(f"[{role}] Hybrid NLP/LLM scoring notice: {he}", flush=True)
+        t_nlp = time.perf_counter() - t_nlp_start
+        t_role_total = time.perf_counter() - t_role_start
+        print(
+            f"[Perf][{role}] Clip={t_clip:.2f}s | ASR={t_asr:.2f}s | Merge={t_merge:.2f}s | "
+            f"ASR-Corr={t_asr_corr:.2f}s | WavLM+L2MDD={t_gpu:.2f}s | LLM+NLP-Wait={t_nlp:.2f}s | Total={t_role_total:.2f}s",
+            flush=True,
+        )
 
         summary = _build_summary(
             sentences,
@@ -1128,10 +1186,12 @@ class SpeakingPipeline:
         score_teacher: bool = False,
     ) -> Dict[str, Any]:
         """Diarize A/B → split each track by silence → score every sentence."""
+        t_conv_start = time.perf_counter()
         fb = self.enable_feedback if feedback is None else feedback
         audio = Path(audio)
 
         base_dir = Path(diarize_output_dir or audio.parent / f"{audio.stem}_split")
+        t_diar_start = time.perf_counter()
         split = self._diarize_two_speakers(
             audio,
             base_dir,
@@ -1139,6 +1199,7 @@ class SpeakingPipeline:
             teacher_embedding=teacher_embedding,
             student_embedding=student_embedding,
         )
+        t_diar = time.perf_counter() - t_diar_start
 
         has_refs = (
             teacher_voice is not None
@@ -1156,6 +1217,7 @@ class SpeakingPipeline:
             
             all_segs = split.get("segments") or []
             
+            t_teach_start = time.perf_counter()
             teacher = self._assess_speaker_sentences(
                 output_dir=teacher_dir,
                 speaker="Teacher",
@@ -1167,6 +1229,8 @@ class SpeakingPipeline:
                 score=score_teacher and len(teacher_segs) > 0,
                 role="teacher",
             )
+            t_teach = time.perf_counter() - t_teach_start
+            t_stud_start = time.perf_counter()
             student = self._assess_speaker_sentences(
                 output_dir=student_dir,
                 speaker="Student",
@@ -1178,6 +1242,12 @@ class SpeakingPipeline:
                 score=True,
                 role="student",
                 teacher_sentences=teacher.get("sentences", []),
+            )
+            t_stud = time.perf_counter() - t_stud_start
+            t_conv_total = time.perf_counter() - t_conv_start
+            print(
+                f"[Perf][Conversation] Diarize={t_diar:.2f}s | Teacher={t_teach:.2f}s | Student={t_stud:.2f}s | Total={t_conv_total:.2f}s",
+                flush=True,
             )
             dialogue = _build_dialogue(teacher.get("sentences", []), student.get("sentences", []))
 

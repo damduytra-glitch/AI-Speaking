@@ -321,9 +321,19 @@ run_cells.append(code_cell([
     "    subprocess.run('chmod +x /usr/local/bin/cloudflared', shell=True, check=True)\n",
 ]))
 
+from env_config import get_frontend_config, get_gemini_api_key
+
+_PUBLIC_CFG = get_frontend_config()
+_KAGGLE_SUPABASE_URL = _PUBLIC_CFG.get("SUPABASE_URL", "")
+_KAGGLE_SUPABASE_ANON_KEY = _PUBLIC_CFG.get("SUPABASE_ANON_KEY", "")
+_KAGGLE_GEMINI_API_KEY = get_gemini_api_key()
+
 run_cells.append(md_cell(["---\n", "## Khởi tạo Pipeline từ Kaggle Input"]))
 run_cells.append(code_cell([
     "import sys, os, types\n",
+    f"os.environ['SUPABASE_URL'] = {_KAGGLE_SUPABASE_URL!r}\n",
+    f"os.environ['SUPABASE_ANON_KEY'] = {_KAGGLE_SUPABASE_ANON_KEY!r}\n",
+    f"os.environ['GEMINI_API_KEY'] = {_KAGGLE_GEMINI_API_KEY!r}\n",
     "try:\n",
     "    import peft.import_utils\n",
     "    peft.import_utils.is_torchao_available = lambda: False\n",
@@ -424,11 +434,11 @@ run_cells.append(code_cell([
     "else:\n",
     "    print('⚠️ Không phát hiện GPU CUDA — đang chạy trên CPU (rất chậm).')\n",
     "\n",
-    "print(f'\\n[1/2] Loading Registration Model (ERes2Net) on {asr_dev}...')\n",
+    "print(f'\\n[1/3] Loading Registration Model (ERes2Net) on {asr_dev}...')\n",
     "extract_embedder = ERes2NetEmbedder(device=asr_dev)\n",
     "print(f'✅ Registration Embedder ready on {asr_dev}!')\n",
     "\n",
-    "print(f'\\n[2/2] Loading SpeakingPipeline (Whisper & Diarize on {asr_dev}, Scoring on {score_dev})...')\n",
+    "print(f'\\n[2/3] Loading SpeakingPipeline (Whisper & Diarize on {asr_dev}, Scoring on {score_dev})...')\n",
     "pipeline = SpeakingPipeline(\n",
     "    config_path=tmp_config,\n",
     "    device=score_dev,\n",
@@ -437,6 +447,12 @@ run_cells.append(code_cell([
     "    l2_mdd_ckpt=L2_MDD_PATH,\n",
     ")\n",
     "print('✅ SpeakingPipeline ready!')\n",
+    "\n",
+    "print('\\n[3/3] Preloading spaCy (en_core_web_sm) & LanguageTool JVM (tránh chờ 30-45s ở Task đầu tiên)...')\n",
+    "from infer.hybrid_nlp_scorer import get_spacy_nlp, get_language_tool\n",
+    "_nlp_ok = get_spacy_nlp() is not None\n",
+    "_lt_ok = get_language_tool() is not None\n",
+    "print(f'✅ NLP Preload done -> spaCy={_nlp_ok} | LanguageTool={_lt_ok}')\n",
     "\n",
     "print('🎉 ALL SYSTEMS READY!')\n"
 ]))
@@ -469,35 +485,21 @@ run_cells.append(code_cell([
 run_cells.append(md_cell([
     "---\n",
     "## Khởi chạy Backend API (FastAPI + Cloudflare Tunnel)\n",
-    "**Cấu hình Secrets (Kaggle Secrets → Add-ons → Secrets):**\n",
-    "- `SUPABASE_URL` & `SUPABASE_ANON_KEY` (tự động cập nhật Cloudflare tunnel URL vào `global_settings`)\n",
-    "- `SUPABASE_SERVICE_ROLE_KEY` (tùy chọn — cho phép backend tự đọc `gemini_api_key` từ `global_settings`)\n",
-    "- `GEMINI_API_KEY` (API key `revidapi.com` cho `deepseek-v4.1-flash` sửa ASR & chấm FC/LR/GRA)\n",
+    "- Tự động cập nhật Cloudflare tunnel URL vào Supabase `global_settings`.\n",
+    "- Đã hardcode sẵn `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `GEMINI_API_KEY` trực tiếp trong notebook (không cần `.env` hay Kaggle Secrets).\n",
 ]))
-
-from env_config import get_frontend_config
-
-_PUBLIC_CFG = get_frontend_config()
-_KAGGLE_SUPABASE_URL = _PUBLIC_CFG.get("SUPABASE_URL", "")
-_KAGGLE_SUPABASE_ANON_KEY = _PUBLIC_CFG.get("SUPABASE_ANON_KEY", "")
 
 # Pre-backend cell: start tunnel and register globals
 run_cells.append(code_cell([
-    "# Cấu hình Supabase & LLM Secrets cho Kaggle Notebook\n",
+    "# Cấu hình Supabase & LLM hardcode trực tiếp trong Kaggle Notebook\n",
     "import os\n",
-    f"os.environ.setdefault('SUPABASE_URL', {_KAGGLE_SUPABASE_URL!r})\n",
-    f"os.environ.setdefault('SUPABASE_ANON_KEY', {_KAGGLE_SUPABASE_ANON_KEY!r})\n",
+    f"os.environ['SUPABASE_URL'] = {_KAGGLE_SUPABASE_URL!r}\n",
+    f"os.environ['SUPABASE_ANON_KEY'] = {_KAGGLE_SUPABASE_ANON_KEY!r}\n",
+    f"os.environ['GEMINI_API_KEY'] = {_KAGGLE_GEMINI_API_KEY!r}\n",
     "\n",
     "import env_config\n",
-    "for _sec_name in ('SUPABASE_SERVICE_ROLE_KEY', 'GEMINI_API_KEY', 'HF_TOKEN'):\n",
-    "    _val = env_config.get_secret(_sec_name)\n",
-    "    if _val:\n",
-    "        os.environ[_sec_name] = _val\n",
-    "\n",
-    "# Setup tunnel and inject globals into backend_api\n",
     "import backend_api\n",
     "import builtins\n",
-    "backend_api._bootstrap_llm_env_from_supabase()\n",
     "\n",
     "_sb_url, _sb_key = env_config.get_supabase_config()\n",
     "_gem_key = env_config.get_gemini_api_key()\n",
@@ -508,8 +510,6 @@ run_cells.append(code_cell([
     "except Exception:\n",
     "    _spacy_ok = False\n",
     "print(f'Preflight -> SUPABASE: {bool(_sb_url and _sb_key)} | GEMINI_API_KEY ({env_config.DEFAULT_GEMINI_MODEL}): {bool(_gem_key)} | spaCy en_core_web_sm: {_spacy_ok}')\n",
-    "if not _gem_key:\n",
-    "    print('⚠️ CHÚ Ý: Chưa có GEMINI_API_KEY! Hãy thêm GEMINI_API_KEY (hoặc SUPABASE_SERVICE_ROLE_KEY) vào Kaggle Secrets để bật ASR Correction & DeepSeek v4.1 Flash.')\n",
     "\n",
     "# Start Cloudflare Tunnel\n",
     "PUBLIC_URL = backend_api.start_cloudflare_tunnel(8000)\n",
